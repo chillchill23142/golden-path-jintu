@@ -1,0 +1,8 @@
+{
+  "name": "golden-path-jintu",
+  "version": "1.0.0",
+  "description": "Golden Path · 金途 - Hong Kong Horse Racing Analytics",
+  "dependencies": {
+    "hkjc-api": "^1.0.5"
+  }
+}
