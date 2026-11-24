@@ -404,7 +404,6 @@ test('frontend presents the current meeting, dynamic race numbers, and source fa
   assert.doesNotMatch(html, /toISOString\s*\(/);
   assert.doesNotMatch(html, /!r\.success\s*\|\|/);
   assert.doesNotMatch(html, /<option value="1">/);
-  assert.doesNotMatch(html, /type="date"/);
   assert.doesNotMatch(html, /歷史賽果/);
   assert.doesNotMatch(html, /2026-11-25/);
   assert.doesNotMatch(html, /紅松鼠/);
@@ -414,9 +413,20 @@ test('frontend presents the current meeting, dynamic race numbers, and source fa
   assert.match(html, /sourceFailureHtml/);
   assert.match(html, /timeZone:\s*'Asia\/Hong_Kong'/);
   assert.match(html, /raceOptionValues/);
+  const withoutOfficial = html.replace(/<section id="official"[\s\S]*?<\/section>/, '');
+  assert.doesNotMatch(withoutOfficial, /type="date"/);
+  assert.doesNotMatch(withoutOfficial, /id="official-venue"/);
+  assert.doesNotMatch(withoutOfficial, /id="official-date"/);
+  assert.match(html, /id="official"/);
+  assert.match(html, /不會篩選當前會議/);
+  assert.match(html, /table-scroll/);
+  assert.match(html, /fetchAPI\('official-results'/);
+  assert.match(html, /r\.officialResults/);
+  assert.match(html, /r\.currentMeeting !== false/);
+  assert.doesNotMatch(html, /currentMeetings\s*=\s*[^;]*official/i);
 
   const block = html.slice(html.indexOf('// pure-start'), html.indexOf('// pure-end'));
-  const pure = new Function(`${block}; return { raceOptionValues, currentMeetingHeading, formatHongKongTime, oddsForRunner };`)();
+  const pure = new Function(`${block}; return { raceOptionValues, currentMeetingHeading, officialResultsHeading, hongKongCalendarDate, formatHongKongTime, oddsForRunner };`)();
   const eleven = Array.from({ length: 11 }, (_, index) => ({ no: index + 1 }));
   assert.deepEqual(pure.raceOptionValues({ totalNumberOfRace: 9, races: [] }), []);
   assert.deepEqual(pure.raceOptionValues({ totalNumberOfRace: 5 }), []);
@@ -432,6 +442,19 @@ test('frontend presents the current meeting, dynamic race numbers, and source fa
   );
   assert.equal(pure.currentMeetingHeading(null), '當前會議');
   assert.equal(pure.currentMeetingHeading({ date: '2026-12-20', venueCode: 'ST', races: eleven }).includes('2026-11-25'), false);
+  assert.equal(
+    pure.officialResultsHeading({ date: '2026-11-22', venueCode: 'ST', races: eleven }),
+    '官方賽果 · 已結束賽事 · 沙田 · 2026-11-22 · 11 場'
+  );
+  assert.equal(
+    pure.officialResultsHeading({ date: '2024-01-03', venueCode: 'HV', races: [{ no: 1 }, { no: 2 }] }),
+    '官方賽果 · 已結束賽事 · 跑馬地 · 2024-01-03 · 2 場'
+  );
+  assert.equal(pure.officialResultsHeading({ date: '2026-11-22', venueCode: 'ST', races: [] }), '官方賽果');
+  assert.equal(pure.officialResultsHeading(null), '官方賽果');
+  assert.equal(pure.hongKongCalendarDate('2026-11-22T15:59:00Z'), '2026-11-22');
+  assert.equal(pure.hongKongCalendarDate('2026-11-22T16:00:00Z'), '2026-11-23');
+  assert.equal(pure.hongKongCalendarDate('2026-11-22T16:30:00Z'), '2026-11-23');
   assert.equal(pure.formatHongKongTime('2026-11-25T18:40:00+08:00'), '18:40');
   assert.equal(pure.formatHongKongTime('2026-11-25T10:40:00Z'), '18:40');
   assert.equal(pure.oddsForRunner([{ combString: '01', oddsValue: '25' }, { combString: '02', oddsValue: '8.8' }], 1), '25');

@@ -21,6 +21,10 @@ th,td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
 .error { color:#c45c5c; background:#fdf2f2; padding:10px; border-radius:6px; }
 .badge { background:#e8f0dc; color:var(--accent-strong); padding:3px 8px; border-radius:12px; font-size:12px; }
 .note { background:#fff8e6; color:#8a6d3b; padding:8px 12px; border-radius:8px; font-size:13px; margin:0 0 12px; }
+.official-note { background:#e7eef6; color:#2c4a6e; padding:8px 12px; border-radius:8px; font-size:13px; margin:0 0 12px; }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.table-scroll table { width: max-content; min-width: 100%; }
+.table-scroll th, .table-scroll td { white-space: nowrap; }
 .meta { color:var(--text-dim); font-size:12px; margin:8px 0 0; }
 button { background:var(--accent); color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; }
 select, input { padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#fff; }
@@ -36,6 +40,7 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
     <button class="active" onclick="showPage('dashboard')">總覽</button>
     <button onclick="showPage('race')">單場分析</button>
     <button onclick="showPage('results')">當前排位</button>
+    <button onclick="showPage('official')">官方賽果</button>
     <button onclick="showPage('prediction')">預測模型</button>
     <button onclick="showPage('horse')">馬匹詳情</button>
   </nav>
@@ -59,6 +64,25 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
       <h3 id="card-heading">當前會議</h3>
       <p class="note">只顯示馬會目前回傳的當前會議，不能按日期或馬場查詢其他賽事。</p>
       <div id="results-content" class="loading">載入中...</div>
+    </div>
+  </section>
+  <section id="official" class="page">
+    <div class="card">
+      <h3 id="official-heading">官方賽果</h3>
+      <p class="official-note">日期及馬場只用於查閱香港賽馬會已刊出的官方賽果（已結束賽事）。這不會篩選當前會議。當前會議的排位及獨贏賠率仍由馬會 GraphQL 提供，不能按日期或馬場查詢。</p>
+      <form class="toolbar" onsubmit="loadOfficialResults(); return false;">
+        <label for="official-date">賽事日期</label>
+        <input id="official-date" type="date">
+        <label for="official-venue">馬場</label>
+        <select id="official-venue">
+          <option value="">請選擇馬場</option>
+          <option value="ST">沙田</option>
+          <option value="HV">跑馬地</option>
+        </select>
+        <button type="submit">查閱官方賽果</button>
+      </form>
+      <p class="meta">來源是已刊出的官方賽果網頁。這不是當前會議，亦不是獨贏賠率。</p>
+      <div id="official-content"><p>選擇賽事日期及馬場後查閱已刊出賽果。</p></div>
     </div>
   </section>
   <section id="prediction" class="page">
@@ -85,7 +109,7 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
     </div>
   </section>
 </div>
-<footer>資料來源：香港賽馬會 · 只顯示當前會議 · 僅供參考 · Golden Path · 金途</footer>
+<footer>當前會議來自 GraphQL · 已結束賽事見官方賽果 · 僅供參考 · Golden Path · 金途</footer>
 <script>
 let oddsChart, refreshInterval, oddsHistory = {}, currentMeetings = [], oddsRequest = 0;
 const CURRENT_MEETING_LIMIT = '只顯示馬會目前回傳的當前會議，不能按日期或馬場查詢其他賽事。';
@@ -116,6 +140,25 @@ function currentMeetingHeading(meeting) {
   const venue = venueLabel(meeting.venueCode);
   const count = raceOptionValues(meeting).length;
   return '當前會議 · ' + [venue, meeting.date || '', count ? count + ' 場' : ''].filter(Boolean).join(' · ');
+}
+function officialResultsHeading(meeting) {
+  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
+  if (!races.length) return '官方賽果';
+  const venue = venueLabel(meeting.venueCode);
+  const count = raceOptionValues(meeting).length;
+  return '官方賽果 · 已結束賽事 · ' + [venue, meeting.date || '', count ? count + ' 場' : ''].filter(Boolean).join(' · ');
+}
+function hongKongCalendarDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Hong_Kong',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type).value;
+  return get('year') + '-' + get('month') + '-' + get('day');
 }
 function formatHongKongTime(value) {
   if (!value) return '';
@@ -194,6 +237,7 @@ function showPage(id) {
   if (id === 'dashboard') loadDashboard();
   if (id === 'race') startOddsTracking();
   if (id === 'results') loadRaceCard();
+  if (id === 'official') prepareOfficialResults();
   if (id === 'horse') loadHorseDetails();
   if (id === 'prediction') preparePrediction();
   if (refreshInterval && id !== 'race') clearInterval(refreshInterval);
@@ -370,6 +414,71 @@ async function loadPrediction() {
       const horse = Number.isInteger(horseNo) ? String(horseNo) : p.horse;
       return '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(horse) + '</td><td>' + escapeHtml(p.odds) + '</td><td><strong>' + escapeHtml(p.winProb) + '%</strong></td><td>' + escapeHtml(p.confidence) + '</td></tr>';
     }).join('') + '</table>';
+  } catch (e) {
+    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+  }
+}
+function prepareOfficialResults() {
+  const input = document.getElementById('official-date');
+  if (input) input.max = hongKongCalendarDate(new Date());
+}
+function renderOfficialMeeting(meeting) {
+  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
+  if (!races.length) return '<p>此日期及馬場沒有已刊出的官方賽果。</p>';
+  let html = '<p class="official-note">' + escapeHtml(officialResultsHeading(meeting)) + '。場次跟隨該日已刊出賽果，不是當前會議。</p>';
+  for (const race of races) {
+    const name = race.raceName_ch || '';
+    html += '<h4 style="margin:16px 0 6px;">第' + escapeHtml(race.no) + '場 ' + escapeHtml(name) + '</h4>';
+    if (race.detail) html += '<p class="meta">' + escapeHtml(race.detail) + '</p>';
+    const runners = Array.isArray(race.runners) ? race.runners : [];
+    if (!runners.length) {
+      html += '<p>此場沒有已刊出名次。</p>';
+    } else {
+      html += '<p class="meta">以下名次來自官方賽果網頁，不是當前會議排位。</p>';
+      html += '<div class="table-scroll"><table><tr><th>名次</th><th>馬號</th><th>馬名</th><th>騎師</th><th>練馬師</th><th>實際負磅</th><th>檔位</th></tr>';
+      for (const runner of runners) {
+        html += '<tr><td>' + escapeHtml(runner.position ?? '') + '</td><td>' + escapeHtml(runner.no ?? '') + '</td><td>' + escapeHtml(runner.name_ch || '') + '</td><td>' + escapeHtml(runner.jockey_ch || '') + '</td><td>' + escapeHtml(runner.trainer_ch || '') + '</td><td>' + escapeHtml(runner.actualWeight ?? '') + '</td><td>' + escapeHtml(runner.barrier ?? '') + '</td></tr>';
+      }
+      html += '</table></div>';
+    }
+    const dividends = Array.isArray(race.dividends) ? race.dividends : [];
+    if (dividends.length) {
+      html += '<p class="meta">官方派彩。這是已結束賽事的派彩，不是當前會議的獨贏賠率。</p>';
+      html += '<div class="table-scroll"><table><tr><th>彩池</th><th>勝出組合</th><th>派彩 (HK$)</th></tr>';
+      for (const item of dividends) {
+        html += '<tr><td>' + escapeHtml(item.pool || '') + '</td><td>' + escapeHtml(item.combination || '') + '</td><td>' + escapeHtml(item.dividend || '') + '</td></tr>';
+      }
+      html += '</table></div>';
+    }
+  }
+  return html;
+}
+async function loadOfficialResults() {
+  const el = document.getElementById('official-content');
+  const date = document.getElementById('official-date').value;
+  const venue = document.getElementById('official-venue').value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    el.innerHTML = '<div class="error">請輸入有效的賽事日期。</div>';
+    return;
+  }
+  if (venue !== 'ST' && venue !== 'HV') {
+    el.innerHTML = '<div class="error">請選擇馬場。</div>';
+    return;
+  }
+  el.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const r = await fetchAPI('official-results', { date, venue });
+    if (document.getElementById('official-date').value !== date || document.getElementById('official-venue').value !== venue) return;
+    if (!r.success) {
+      el.innerHTML = sourceFailureHtml(r);
+      return;
+    }
+    if (!r.officialResults || r.currentMeeting !== false || r.date !== date || r.venue !== venue) {
+      el.innerHTML = sourceFailureHtml({ message: '暫時無法取得賽事資料' });
+      return;
+    }
+    document.getElementById('official-heading').textContent = officialResultsHeading(r.data);
+    el.innerHTML = renderOfficialMeeting(r.data);
   } catch (e) {
     el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
   }
