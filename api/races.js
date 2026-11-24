@@ -1,4 +1,6 @@
 // /api/races.js
+import { RACE_MEETINGS_QUERY, WIN_POOL_QUERY } from './officialQueries.js';
+
 const GRAPHQL_URL = 'https://info.cld.hkjc.com/graphql/base/';
 const HEADERS = { 'Content-Type': 'application/json', 'Accept': '*/*', 'Origin': 'https://bet.hkjc.com', 'Referer': 'https://bet.hkjc.com/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -8,35 +10,6 @@ const HEADERS = { 'Content-Type': 'application/json', 'Accept': '*/*', 'Origin':
 // SOURCE_HTTP            — non-OK HTTP status without a more specific code
 // SOURCE_ERROR           — other GraphQL errors, non-JSON bodies, or network failures
 export const USER_FACING_MESSAGE = '暫時無法取得賽事資料';
-
-const RACE_MEETINGS_QUERY = `query raceMeetings($date: String, $venueCode: String) {
-  timeOffset { rc }
-  activeMeetings: raceMeetings {
-    id venueCode date status
-    races { no postTime status wageringFieldSize }
-  }
-  raceMeetings(date: $date, venueCode: $venueCode) {
-    id status venueCode date totalNumberOfRace
-    races {
-      no status postTime distance
-      runners {
-        id no status name_ch name_en
-        barrierDrawNumber handicapWeight currentRating last6run winOdds
-        jockey { code name_ch name_en }
-        trainer { code name_ch name_en }
-      }
-    }
-  }
-}`;
-
-const ODDS_QUERY = `query racing($date: String, $venueCode: String, $oddsTypes: [OddsType], $raceNo: Int) {
-  raceMeetings(date: $date, venueCode: $venueCode) {
-    pmPools(oddsTypes: $oddsTypes, raceNo: $raceNo) {
-      id oddsType status
-      oddsNodes { combString oddsValue hotFavourite }
-    }
-  }
-}`;
 
 export function operationNameFromQuery(query) {
   const match = /(?:query|mutation|subscription)\s+([_A-Za-z][_0-9A-Za-z]*)/.exec(String(query));
@@ -165,44 +138,6 @@ async function gql(query, variables = {}, doFetch = globalThis.fetch) {
   return sourceFailure(code);
 }
 
-// Asia/Hong_Kong calendar day. A UTC date is still the previous day during 00:00–07:59 HKT.
-export function hongKongDate(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Hong_Kong',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(now);
-  const pick = (type) => parts.find((part) => part.type === type)?.value;
-  const year = pick('year');
-  const month = pick('month');
-  const day = pick('day');
-  if (!year || !month || !day) throw new Error('Unable to format Asia/Hong_Kong date');
-  return `${year}-${month}-${day}`;
-}
-
-function shiftIsoDate(isoDate, days) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
-  if (!match) throw new Error('Invalid calendar date');
-  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
-  const year = utc.getUTCFullYear();
-  const month = String(utc.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(utc.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-export function getPastDates(days = 7, now = new Date()) {
-  const today = hongKongDate(now);
-  const dates = [];
-  for (let i = 0; i < days; i++) dates.push(shiftIsoDate(today, -i));
-  return dates;
-}
-
-function raceCalendarDate(requested, now) {
-  if (typeof requested === 'string' && requested.trim()) return requested.trim();
-  return hongKongDate(now);
-}
-
 function sendSourceFailure(res, code) {
   return res.status(502).json({
     success: false,
@@ -211,58 +146,96 @@ function sendSourceFailure(res, code) {
   });
 }
 
-export function createHandler({ fetch: doFetch = globalThis.fetch, now = () => new Date() } = {}) {
+export function parseRaceNo(value) {
+  const text = typeof value === 'number' ? String(value) : String(value ?? '');
+  if (!/^[1-9]\d*$/.test(text)) return null;
+  return Number(text);
+}
+
+// WIN pools are kept only when the pool itself names this race.
+// A pool for another raceNo is not reused.
+export function winPoolForRace(pools, raceNo) {
+  const target = parseRaceNo(raceNo);
+  if (target == null) return null;
+  const list = Array.isArray(pools) ? pools : [];
+  for (const pool of list) {
+    if (!pool || String(pool.oddsType || '').toUpperCase() !== 'WIN') continue;
+    const races = pool.leg && pool.leg.races;
+    if (Array.isArray(races) && races.length > 0) {
+      if (races.some((n) => Number(n) === target)) return pool;
+      continue;
+    }
+    if (pool.leg && pool.leg.number != null && pool.leg.number !== '' && Number(pool.leg.number) === target) {
+      return pool;
+    }
+  }
+  return null;
+}
+
+function meetingList(data) {
+  const meetings = data && data.raceMeetings;
+  return Array.isArray(meetings) ? meetings : [];
+}
+
+function sendCurrentMeetings(res, meetings) {
+  return res.status(200).json({
+    success: true,
+    currentMeeting: true,
+    data: meetings,
+    note: meetings.length ? '當前會議' : '目前沒有當前會議'
+  });
+}
+
+function predictFromNodes(nodes) {
+  return nodes.map((n) => {
+    const oddsVal = parseFloat(n.oddsValue) || 99;
+    const prob = Math.min(95, Math.max(5, 100 / oddsVal * 1.2));
+    return {
+      horse: n.combString,
+      odds: oddsVal,
+      winProb: Math.round(prob * 10) / 10,
+      confidence: oddsVal < 4 ? '高' : oddsVal < 8 ? '中' : '低'
+    };
+  }).sort((a, b) => b.winProb - a.winProb).slice(0, 5);
+}
+
+export function createHandler({ fetch: doFetch = globalThis.fetch } = {}) {
   return async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
-      const { type = 'meetings', race = '1', odds = 'WIN', date, venue = 'ST' } = req.query || {};
+      const { type = 'meetings', race = '1' } = req.query || {};
 
-      if (type === 'meetings') {
-        const activeResult = await gql(RACE_MEETINGS_QUERY, {}, doFetch);
-        if (!activeResult.ok) return sendSourceFailure(res, activeResult.code);
-        const active = activeResult.data.activeMeetings || [];
-        if (active.length) {
-          return res.status(200).json({ success: true, data: active, isLive: true });
-        }
-        const pastDates = getPastDates(5, now());
-        for (const d of pastDates) {
-          for (const v of ['ST', 'HV']) {
-            const past = await gql(RACE_MEETINGS_QUERY, { date: d, venueCode: v }, doFetch);
-            if (!past.ok) return sendSourceFailure(res, past.code);
-            const meetings = past.data.raceMeetings || [];
-            if (meetings.length && meetings[0].races?.length) {
-              return res.status(200).json({ success: true, data: meetings, isLive: false, note: `顯示最近賽事 (${d})` });
-            }
-          }
-        }
-        return res.status(200).json({ success: true, data: [], note: '目前沒有進行中的賽事' });
-      }
-
-      if (type === 'races') {
-        const today = raceCalendarDate(date, now());
-        const result = await gql(RACE_MEETINGS_QUERY, { date: today, venueCode: venue }, doFetch);
+      // date and venue query params are intentionally ignored. The allowlisted
+      // documents return the current meeting and do not filter by those values.
+      if (type === 'meetings' || type === 'races') {
+        const result = await gql(RACE_MEETINGS_QUERY, {}, doFetch);
         if (!result.ok) return sendSourceFailure(res, result.code);
-        return res.status(200).json({ success: true, data: result.data.raceMeetings || [], date: today, venue });
+        return sendCurrentMeetings(res, meetingList(result.data));
       }
 
-      if (type === 'odds') {
-        const today = raceCalendarDate(date, now());
-        const result = await gql(ODDS_QUERY, { date: today, venueCode: venue, oddsTypes: odds.split(','), raceNo: parseInt(race) }, doFetch);
+      if (type === 'odds' || type === 'predict') {
+        const raceNo = parseRaceNo(race);
+        if (raceNo == null) return res.status(400).json({ success: false, error: 'Invalid race' });
+        const result = await gql(WIN_POOL_QUERY, { oddsTypes: ['WIN'], raceNo }, doFetch);
         if (!result.ok) return sendSourceFailure(res, result.code);
-        return res.status(200).json({ success: true, data: result.data.raceMeetings?.[0]?.pmPools || [] });
-      }
-
-      if (type === 'predict') {
-        const today = raceCalendarDate(date, now());
-        const oddsData = await gql(ODDS_QUERY, { date: today, venueCode: venue, oddsTypes: ['WIN'], raceNo: parseInt(race) }, doFetch);
-        if (!oddsData.ok) return sendSourceFailure(res, oddsData.code);
-        const nodes = oddsData.data.raceMeetings?.[0]?.pmPools?.[0]?.oddsNodes || [];
-        const predictions = nodes.map(n => {
-          const oddsVal = parseFloat(n.oddsValue) || 99;
-          const prob = Math.min(95, Math.max(5, 100 / oddsVal * 1.2));
-          return { horse: n.combString, odds: oddsVal, winProb: Math.round(prob * 10) / 10, confidence: oddsVal < 4 ? '高' : oddsVal < 8 ? '中' : '低' };
-        }).sort((a, b) => b.winProb - a.winProb).slice(0, 5);
-        return res.status(200).json({ success: true, race: parseInt(race), predictions, model: 'Odds-based probability model' });
+        const pools = result.data?.raceMeetings?.[0]?.pmPools || [];
+        const win = winPoolForRace(pools, raceNo);
+        if (type === 'odds') {
+          return res.status(200).json({
+            success: true,
+            currentMeeting: true,
+            race: raceNo,
+            data: win ? [win] : []
+          });
+        }
+        const nodes = Array.isArray(win?.oddsNodes) ? win.oddsNodes : [];
+        return res.status(200).json({
+          success: true,
+          currentMeeting: true,
+          race: raceNo,
+          predictions: predictFromNodes(nodes),
+          model: 'Odds-based probability model'
+        });
       }
 
       return res.status(400).json({ success: false, error: 'Invalid type' });
