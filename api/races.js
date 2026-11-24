@@ -1,5 +1,6 @@
 // /api/races.js
 import { RACE_MEETINGS_QUERY, WIN_POOL_QUERY } from './officialQueries.js';
+import { loadOfficialResults, parseRaceCalendarDate, parseVenueCode } from './officialResults.js';
 
 const GRAPHQL_URL = 'https://info.cld.hkjc.com/graphql/base/';
 const HEADERS = { 'Content-Type': 'application/json', 'Accept': '*/*', 'Origin': 'https://bet.hkjc.com', 'Referer': 'https://bet.hkjc.com/', 'User-Agent': 'Mozilla/5.0' };
@@ -204,6 +205,27 @@ export function createHandler({ fetch: doFetch = globalThis.fetch } = {}) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
       const { type = 'meetings', race = '1' } = req.query || {};
+
+      // Official published results HTML. date and venue apply only here.
+      // The allowlisted current-meeting documents below still ignore them.
+      if (type === 'official-results') {
+        const date = parseRaceCalendarDate(req.query && req.query.date);
+        const venue = parseVenueCode(req.query && req.query.venue);
+        if (!date) return res.status(400).json({ success: false, error: 'Invalid date' });
+        if (!venue) return res.status(400).json({ success: false, error: 'Invalid venue' });
+        const result = await loadOfficialResults({ date, venue, fetch: doFetch });
+        if (!result.ok) return sendSourceFailure(res, result.code);
+        const races = Array.isArray(result.meeting.races) ? result.meeting.races : [];
+        return res.status(200).json({
+          success: true,
+          officialResults: true,
+          currentMeeting: false,
+          date,
+          venue,
+          note: races.length ? '官方賽果' : '此日期及馬場沒有已刊出的官方賽果',
+          data: result.meeting
+        });
+      }
 
       // date and venue query params are intentionally ignored. The allowlisted
       // documents return the current meeting and do not filter by those values.
