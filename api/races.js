@@ -41,6 +41,17 @@ async function gql(query, variables = {}) {
   return json.data || {};
 }
 
+function getPastDates(days = 7) {
+  const dates = [];
+  const now = new Date();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
@@ -48,7 +59,21 @@ export default async function handler(req, res) {
 
     if (type === 'meetings') {
       const data = await gql(RACE_MEETINGS_QUERY, {});
-      return res.status(200).json({ success: true, data: data.activeMeetings || [], note: data.activeMeetings?.length ? null : '目前沒有進行中的賽事' });
+      const active = data.activeMeetings || [];
+      if (active.length) {
+        return res.status(200).json({ success: true, data: active, isLive: true });
+      }
+      const pastDates = getPastDates(5);
+      for (const d of pastDates) {
+        for (const v of ['ST', 'HV']) {
+          const past = await gql(RACE_MEETINGS_QUERY, { date: d, venueCode: v });
+          const meetings = past.raceMeetings || [];
+          if (meetings.length && meetings[0].races?.length) {
+            return res.status(200).json({ success: true, data: meetings, isLive: false, note: `顯示最近賽事 (${d})` });
+          }
+        }
+      }
+      return res.status(200).json({ success: true, data: [], note: '目前沒有進行中的賽事' });
     }
 
     if (type === 'races') {

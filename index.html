@@ -19,6 +19,8 @@ table { width:100%; border-collapse:collapse; font-size:13px; }
 th,td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
 .loading { text-align:center; padding:24px; color:var(--text-dim); }
 .error { color:#c45c5c; background:#fdf2f2; padding:10px; border-radius:6px; }
+.badge { background:#e8f0dc; color:var(--accent-strong); padding:3px 8px; border-radius:12px; font-size:12px; }
+.note { background:#fff8e6; color:#8a6d3b; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; }
 button { background:var(--accent); color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; }
 select, input { padding:6px 10px; border-radius:6px; border:1px solid var(--border); }
 .chart-container { height:200px; margin-top:10px; }
@@ -85,10 +87,27 @@ async function fetchAPI(type, params = {}) {
 }
 async function loadDashboard() {
   const el = document.getElementById('dashboard-content');
+  el.innerHTML = '<div class="loading">載入中...</div>';
   try {
     const r = await fetchAPI('meetings');
-    if (!r.success || !r.data?.length) { el.innerHTML = '<div class="card"><h3>目前沒有進行中的賽事</h3><p>' + (r.note || '') + '</p></div>'; return; }
-    el.innerHTML = r.data.map(m => '<div class="card"><h3>' + (m.venueCode==='ST'?'沙田':m.venueCode==='HV'?'跑馬地':m.venueCode) + ' · ' + (m.date||'') + '</h3><p>' + (m.races?.length||0) + ' 場 · ' + (m.status||'') + '</p></div>').join('');
+    if (!r.success || !r.data?.length) {
+      el.innerHTML = '<div class="card"><h3>目前沒有進行中的賽事</h3><p style="color:var(--text-dim);">暫無最近賽事資料</p></div>';
+      return;
+    }
+    const isLive = r.isLive !== false;
+    const note = r.note || (isLive ? '' : '顯示最近賽事');
+    let html = note ? `<div class="note">${note}</div>` : '';
+    html += r.data.map(m => {
+      const venueName = m.venueCode === 'ST' ? '沙田' : m.venueCode === 'HV' ? '跑馬地' : m.venueCode;
+      const raceCount = m.races?.length || 0;
+      return `<div class="card">
+        <h3>${venueName} · ${m.date || ''}</h3>
+        <span class="badge">${raceCount} 場</span>
+        <p style="margin-top:8px;color:var(--text-dim);">狀態：${m.status || (isLive ? '進行中' : '已結束')}</p>
+        ${!isLive && m.races ? `<p style="margin-top:8px;font-size:13px;">最近一場：第${m.races[m.races.length-1]?.no || '-'} 場</p>` : ''}
+      </div>`;
+    }).join('');
+    el.innerHTML = html;
   } catch(e) { el.innerHTML = '<div class="error">' + e.message + '</div>'; }
 }
 function initChart() {
@@ -153,7 +172,7 @@ async function loadHorseDetails() {
     const r = await fetchAPI('races');
     const runners = r.data?.[0]?.races?.[0]?.runners || [];
     if (!runners.length) { el.innerHTML = '<p>暫無資料</p>'; return; }
-    el.innerHTML = '<table><tr><th>馬號</th><th>馬名</th><th>騎師</th><th>練馬師</th><th>負磅</th><th>近俯</th></tr>' + runners.slice(0,10).map(ru => '<tr><td>' + ru.no + '</td><td>' + (ru.name_ch||ru.name_en||'-') + '</td><td>' + (ru.jockey?.name_ch||'-') + '</td><td>' + (ru.trainer?.name_ch||'-') + '</td><td>' + (ru.handicapWeight||'-') + '</td><td>' + (ru.last6run||'-') + '</td></tr>').join('') + '</table>';
+    el.innerHTML = '<table><tr><th>馬號</th><th>馬名</th><th>騎師</th><th>練馬師</th><th>負磅</th><th>近6仗</th></tr>' + runners.slice(0,10).map(ru => '<tr><td>' + ru.no + '</td><td>' + (ru.name_ch||ru.name_en||'-') + '</td><td>' + (ru.jockey?.name_ch||'-') + '</td><td>' + (ru.trainer?.name_ch||'-') + '</td><td>' + (ru.handicapWeight||'-') + '</td><td>' + (ru.last6run||'-') + '</td></tr>').join('') + '</table>';
   } catch(e) { el.innerHTML = '<div class="error">' + e.message + '</div>'; }
 }
 document.addEventListener('DOMContentLoaded', () => { document.getElementById('result-date').value = new Date().toISOString().slice(0,10); loadDashboard(); });
