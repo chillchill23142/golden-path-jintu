@@ -7,42 +7,106 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root { --bg:#f8f4ed; --card:#fffdf9; --accent:#8a9a5b; --accent-strong:#6b7c4a; --text:#3a3a32; --text-dim:#7a7568; --border:#e8e2d6; }
-body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK TC",sans-serif; background:var(--bg); color:var(--text); margin:0; }
+html { overflow-x: clip; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK TC","PingFang HK","Microsoft JhengHei",sans-serif; background:var(--bg); color:var(--text); margin:0; overflow-x:clip; }
+[hidden] { display:none !important; }
 .header { display:flex; align-items:center; justify-content:space-between; padding:16px 24px; background:var(--card); border-bottom:1px solid var(--border); gap:12px; flex-wrap:wrap; }
+.brand { font-size:18px; }
+.nav { display:flex; flex-wrap:wrap; gap:4px; }
 .nav button { background:transparent; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; color:var(--text); }
 .nav button.active { background:#f0eadf; color:var(--accent-strong); }
+.nav button:focus-visible { outline:2px solid var(--accent-strong); outline-offset:2px; }
 .container { max-width:1100px; margin:0 auto; padding:20px; }
 .page { display:none; } .page.active { display:block; }
 .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; margin-bottom:14px; }
 .card h3 { color:var(--accent-strong); margin:0 0 10px; }
+.race-overview-title { margin:0 0 4px; font-size:18px; line-height:1.4; word-break:keep-all; overflow-wrap:break-word; }
 table { width:100%; border-collapse:collapse; font-size:13px; }
 th,td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
 .loading { text-align:center; padding:24px; color:var(--text-dim); }
 .error { color:#c45c5c; background:#fdf2f2; padding:10px; border-radius:6px; }
-.badge { background:#e8f0dc; color:var(--accent-strong); padding:3px 8px; border-radius:12px; font-size:12px; }
 .note { background:#fff8e6; color:#8a6d3b; padding:8px 12px; border-radius:8px; font-size:13px; margin:0 0 12px; }
 .official-note { background:#e7eef6; color:#2c4a6e; padding:8px 12px; border-radius:8px; font-size:13px; margin:0 0 12px; }
-.table-scroll { overflow-x: auto; max-width: 100%; }
-.table-scroll table { width: max-content; min-width: 100%; }
-.table-scroll th, .table-scroll td { white-space: nowrap; }
+.horse-cards { display:none; }
+.horse-table { overflow-x:auto; max-width:100%; }
+.horse-table table { width:max-content; min-width:100%; }
+.horse-table th, .horse-table td { white-space:nowrap; }
+.table-scroll { overflow-x:auto; max-width:100%; }
+.table-scroll table { width:max-content; min-width:100%; }
+.table-scroll th, .table-scroll td { white-space:nowrap; }
+.horse-card { border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:#fff; }
+.horse-name { margin:0 0 8px; font-size:18px; line-height:1.35; word-break:keep-all; overflow-wrap:break-word; }
+.horse-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; }
+.horse-field { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.horse-field span { color:var(--text-dim); font-size:12px; }
+.horse-field strong { font-size:15px; font-weight:600; line-height:1.4; word-break:keep-all; overflow-wrap:break-word; }
+.meta, .note, .official-note, .card h3, .card h4, .race-overview-title, footer { word-break:keep-all; overflow-wrap:break-word; line-break:strict; }
+.nowrap { white-space:nowrap; }
 .meta { color:var(--text-dim); font-size:12px; margin:8px 0 0; }
 button { background:var(--accent); color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; }
-select, input { padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#fff; }
-.chart-container { height:200px; margin-top:10px; }
+select, input { padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#fff; color:var(--text); }
+.chart-container { position:relative; height:220px; max-width:100%; overflow:hidden; }
+.chart-container canvas { max-width:100%; }
 .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+.section-label { margin:0 0 8px; font-size:15px; }
+.official-form { display:flex; flex-direction:column; align-items:stretch; gap:12px; max-width:420px; margin-bottom:12px; }
+.official-form .field { display:flex; flex-direction:column; align-items:stretch; gap:4px; }
+.official-form label { font-size:14px; font-weight:600; }
+.official-form input, .official-form select, .official-form button { width:100%; min-height:44px; box-sizing:border-box; }
 footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px; }
+@media (min-width: 721px) {
+  .nav { position:static; }
+}
+@media (max-width: 720px) {
+  body { height:100dvh; display:flex; flex-direction:column; overflow:hidden; box-sizing:border-box; padding-bottom:calc(48px + env(safe-area-inset-bottom)); }
+  .header { flex:none; padding:12px 16px; }
+  .container { flex:1 1 auto; min-height:0; width:100%; overflow-y:auto; overflow-x:hidden; box-sizing:border-box; }
+  footer { flex:none; }
+  .header .nav {
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:30;
+    display:grid;
+    grid-template-columns:repeat(6, minmax(0, 1fr));
+    gap:0;
+    background:var(--card);
+    border-top:1px solid var(--border);
+    padding:0 0 env(safe-area-inset-bottom);
+  }
+  .header .nav button {
+    box-sizing:border-box;
+    min-height:44px;
+    width:100%;
+    margin:0;
+    padding:6px 2px;
+    border-radius:0;
+    background:transparent;
+    color:var(--text);
+    font-size:12px;
+    line-height:1.25;
+    white-space:normal;
+  }
+  .header .nav button.active { background:#f0eadf; color:var(--accent-strong); box-shadow:inset 0 2px 0 var(--accent-strong); }
+  .container { padding:12px 12px 20px; }
+  .toolbar { flex-direction:column; align-items:stretch; }
+  .toolbar select, .toolbar button, .toolbar input { min-height:44px; width:100%; box-sizing:border-box; }
+  .horse-table { display:none; }
+  .horse-cards { display:grid; gap:10px; }
+}
 </style>
 </head>
 <body>
 <header class="header">
-  <div><strong>金途</strong> Golden Path</div>
-  <nav class="nav">
-    <button class="active" onclick="showPage('dashboard')">總覽</button>
-    <button onclick="showPage('race')">單場分析</button>
-    <button onclick="showPage('results')">當前排位</button>
-    <button onclick="showPage('official')">官方賽果</button>
-    <button onclick="showPage('prediction')">預測模型</button>
-    <button onclick="showPage('horse')">馬匹詳情</button>
+  <div class="brand"><strong>金途</strong> Golden Path</div>
+  <nav class="nav" aria-label="主要導覽">
+    <button type="button" class="active" aria-current="page" onclick="showPage('dashboard', this)">總覽</button>
+    <button type="button" onclick="showPage('race', this)">單場分析</button>
+    <button type="button" onclick="showPage('results', this)">當前排位</button>
+    <button type="button" onclick="showPage('official', this)">官方賽果</button>
+    <button type="button" onclick="showPage('prediction', this)">預測模型</button>
+    <button type="button" onclick="showPage('horse', this)">馬匹詳情</button>
   </nav>
 </header>
 <div class="container">
@@ -55,14 +119,22 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
         <label for="race-select">場次</label>
         <select id="race-select" onchange="startOddsTracking()"></select>
       </div>
+      <div id="odds-chart-block">
+        <h4 class="section-label">獨贏走勢</h4>
+        <div class="chart-container"><canvas id="oddsChart"></canvas></div>
+      </div>
+      <h4 id="odds-barrier-heading" class="section-label">賠率及檔位</h4>
       <div id="odds-table" class="loading">載入中...</div>
-      <div class="chart-container"><canvas id="oddsChart"></canvas></div>
     </div>
   </section>
   <section id="results" class="page">
     <div class="card">
       <h3 id="card-heading">當前會議</h3>
       <p class="note">只顯示馬會目前回傳的當前會議，不能按日期或馬場查詢其他賽事。</p>
+      <div class="toolbar">
+        <label for="card-race">場次</label>
+        <select id="card-race" onchange="loadRaceCard()"></select>
+      </div>
       <div id="results-content" class="loading">載入中...</div>
     </div>
   </section>
@@ -70,17 +142,22 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
     <div class="card">
       <h3 id="official-heading">官方賽果</h3>
       <p class="official-note">日期及馬場只用於查閱香港賽馬會已刊出的官方賽果（已結束賽事）。這不會篩選當前會議。當前會議的排位及獨贏賠率仍由馬會 GraphQL 提供，不能按日期或馬場查詢。</p>
-      <form class="toolbar" onsubmit="loadOfficialResults(); return false;">
-        <label for="official-date">賽事日期</label>
-        <input id="official-date" type="date">
-        <label for="official-venue">馬場</label>
-        <select id="official-venue">
-          <option value="">請選擇馬場</option>
-          <option value="ST">沙田</option>
-          <option value="HV">跑馬地</option>
-        </select>
+      <form class="official-form" onsubmit="loadOfficialResults(event); return false;">
+        <div class="field">
+          <label for="official-date">賽事日期（年-月-日）</label>
+          <input id="official-date" name="race-date-hk" type="text" lang="zh-HK" placeholder="YYYY-MM-DD" maxlength="14" autocomplete="off" spellcheck="false" aria-describedby="official-date-hint">
+        </div>
+        <div class="field">
+          <label for="official-venue">馬場</label>
+          <select id="official-venue">
+            <option value="">請選擇馬場</option>
+            <option value="ST">沙田</option>
+            <option value="HV">跑馬地</option>
+          </select>
+        </div>
         <button type="submit">查閱官方賽果</button>
       </form>
+      <p id="official-date-hint" class="meta">格式：YYYY-MM-DD（年-月-日），以香港日曆計算。</p>
       <p class="meta">來源是已刊出的官方賽果網頁。這不是當前會議，亦不是獨贏賠率。</p>
       <div id="official-content"><p>選擇賽事日期及馬場後查閱已刊出賽果。</p></div>
     </div>
@@ -91,8 +168,8 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
       <p class="note">預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。</p>
       <div class="toolbar">
         <label for="pred-race">場次</label>
-        <select id="pred-race"></select>
-        <button onclick="loadPrediction()">執行預測</button>
+        <select id="pred-race" onchange="onPredictionRaceChange()"></select>
+        <button type="button" onclick="loadPrediction()">執行預測</button>
       </div>
       <div id="prediction-content" class="loading">選擇場次後執行預測</div>
     </div>
@@ -109,18 +186,26 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
     </div>
   </section>
 </div>
-<footer>當前會議來自 GraphQL · 已結束賽事見官方賽果 · 僅供參考 · Golden Path · 金途</footer>
+<footer>當前會議來自 GraphQL · 已結束賽事見官方賽果 · 僅供參考 · <span class="nowrap">Golden Path</span> · 金途</footer>
 <script>
-let oddsChart, refreshInterval, oddsHistory = {}, currentMeetings = [], oddsRequest = 0;
+let oddsChart, refreshInterval, oddsHistory = {}, currentMeetings = [], oddsRequest = 0, cardRequest = 0, dashboardRequest = 0;
+// pure-start
+const EMPTY_MEETING_TEXT = '目前沒有當前會議';
+const LOADING_TEXT = '載入中...';
+const SOURCE_ERROR_TEXT = '暫時無法取得賽事資料';
+const PREDICTION_READY_TEXT = '選擇場次後執行預測';
+const PREDICTION_CALCULATING_TEXT = '計算中...';
 const CURRENT_MEETING_LIMIT = '只顯示馬會目前回傳的當前會議，不能按日期或馬場查詢其他賽事。';
+const OFFICIAL_LOOKBACK_DAYS = 56;
+const OFFICIAL_FALLBACK_BATCH = 14;
+
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 function sourceFailureHtml(payload) {
-  const message = payload && typeof payload.message === 'string' && payload.message ? payload.message : '暫時無法取得賽事資料';
+  const message = payload && typeof payload.message === 'string' && payload.message ? payload.message : SOURCE_ERROR_TEXT;
   return '<div class="error">' + escapeHtml(message) + '</div>';
 }
-// pure-start
 function raceOptionValues(meeting) {
   const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
   const values = [];
@@ -180,7 +265,78 @@ function oddsForRunner(nodes, runnerNo) {
   }
   return '';
 }
-// pure-end
+function daysInMonth(year, month) {
+  if (month === 2) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    return leap ? 29 : 28;
+  }
+  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;
+  return 31;
+}
+function shiftCalendarDate(isoDate, deltaDays) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || ''));
+  if (!match || !Number.isInteger(deltaDays)) return '';
+  let year = Number(match[1]);
+  let month = Number(match[2]);
+  let day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return '';
+  let step = deltaDays;
+  while (step > 0) {
+    if (day < daysInMonth(year, month)) day += 1;
+    else {
+      day = 1;
+      if (month === 12) { month = 1; year += 1; }
+      else month += 1;
+    }
+    step -= 1;
+  }
+  while (step < 0) {
+    if (day > 1) day -= 1;
+    else {
+      if (month === 1) { month = 12; year -= 1; }
+      else month -= 1;
+      day = daysInMonth(year, month);
+    }
+    step += 1;
+  }
+  const monthText = month < 10 ? '0' + month : String(month);
+  const dayText = day < 10 ? '0' + day : String(day);
+  return String(year) + '-' + monthText + '-' + dayText;
+}
+function normalizeOfficialDateInput(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return '';
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text)) return '';
+  let match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  if (!match) match = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(text);
+  if (!match) match = /^(\d{4})年(\d{1,2})月(\d{1,2})日$/.exec(text);
+  if (!match) return '';
+  const month = match[2].length === 1 ? '0' + match[2] : match[2];
+  const day = match[3].length === 1 ? '0' + match[3] : match[3];
+  return shiftCalendarDate(match[1] + '-' + month + '-' + day, 0);
+}
+function officialDateHint(today) {
+  return '格式：YYYY-MM-DD（年-月-日），以香港日曆計算。今日（香港）：' + today + '。';
+}
+function headingHtml(text) {
+  return escapeHtml(text).replace(/-/g, '&#8209;').replace(/ · /g, ' ·<wbr> ');
+}
+function meetingPanelState(input) {
+  const phase = input && input.phase;
+  const hasRaceOptions = !!(input && input.hasRaceOptions);
+  if (phase === 'loading') return { kind: 'loading', text: LOADING_TEXT };
+  if (phase === 'calculating') return { kind: 'calculating', text: PREDICTION_CALCULATING_TEXT };
+  if (phase === 'error') return { kind: 'error', text: SOURCE_ERROR_TEXT };
+  if (hasRaceOptions) return { kind: 'ready', text: PREDICTION_READY_TEXT };
+  return { kind: 'empty', text: EMPTY_MEETING_TEXT };
+}
+function meetingStatusHtml(phase, hasRaceOptions) {
+  const state = meetingPanelState({ phase: phase, hasRaceOptions: hasRaceOptions });
+  if (state.kind === 'ready') return '';
+  if (state.kind === 'loading' || state.kind === 'calculating') return '<div class="loading">' + escapeHtml(state.text) + '</div>';
+  if (state.kind === 'error') return '<div class="error">' + escapeHtml(state.text) + '</div>';
+  return '<p>' + escapeHtml(state.text) + '</p>';
+}
 function personName(person) {
   if (!person) return '';
   return person.name_ch || person.name_en || '';
@@ -196,6 +352,314 @@ function findRace(meeting, raceNo) {
   const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
   return races.find((race) => String(Number(race && race.no)) === String(raceNo)) || null;
 }
+function runnersForRace(meeting, raceNo) {
+  const race = findRace(meeting, raceNo);
+  return race && Array.isArray(race.runners) ? race.runners : [];
+}
+function predictionHorseName(runners, horse) {
+  const target = Number.parseInt(horse, 10);
+  if (!Number.isInteger(target)) return '';
+  const list = Array.isArray(runners) ? runners : [];
+  for (const runner of list) {
+    if (Number(runner && runner.no) === target) return runner.name_ch || runner.name_en || '';
+  }
+  return '';
+}
+function renderDenseRows(rows, columns, titleKey) {
+  const list = Array.isArray(rows) ? rows : [];
+  const cols = Array.isArray(columns) ? columns : [];
+  let head = '';
+  cols.forEach((col) => { head += '<th>' + escapeHtml(col.label) + '</th>'; });
+  let body = '';
+  list.forEach((row) => {
+    body += '<tr>';
+    cols.forEach((col) => {
+      const cell = row && row[col.key] != null ? row[col.key] : '';
+      body += '<td>' + escapeHtml(cell) + '</td>';
+    });
+    body += '</tr>';
+  });
+  let cards = '';
+  list.forEach((row) => {
+    const named = titleKey && row && row[titleKey] ? row[titleKey] : '';
+    const title = named || (row && row.name) || (row && row.no) || '';
+    cards += '<article class="horse-card"><h4 class="horse-name">' + escapeHtml(title) + '</h4><div class="horse-fields">';
+    cols.forEach((col) => {
+      if (titleKey && col.key === titleKey) return;
+      const cell = row && row[col.key] != null ? row[col.key] : '';
+      cards += '<div class="horse-field"><span>' + escapeHtml(col.label) + '</span><strong>' + escapeHtml(cell) + '</strong></div>';
+    });
+    cards += '</div></article>';
+  });
+  return '<div class="horse-table table-scroll"><table><tr>' + head + '</tr>' + body + '</table></div><div class="horse-cards">' + cards + '</div>';
+}
+function renderRunners(race, nodes) {
+  const runners = race && Array.isArray(race.runners) ? race.runners : [];
+  if (!runners.length) return '<p>此場暫無排位</p>';
+  const rows = runners.map((ru) => ({
+    no: ru.no == null ? '' : String(ru.no),
+    name: ru.name_ch || ru.name_en || '',
+    jockey: personName(ru.jockey),
+    trainer: personName(ru.trainer),
+    barrier: ru.barrierDrawNumber == null ? '' : String(ru.barrierDrawNumber),
+    weight: ru.handicapWeight == null ? '' : String(ru.handicapWeight),
+    odds: oddsForRunner(nodes, ru.no) || '—',
+    status: runnerStatusLabel(ru.status)
+  }));
+  return renderDenseRows(rows, [
+    { key: 'no', label: '馬號' },
+    { key: 'name', label: '馬名' },
+    { key: 'jockey', label: '騎師' },
+    { key: 'trainer', label: '練馬師' },
+    { key: 'barrier', label: '檔位' },
+    { key: 'weight', label: '負磅' },
+    { key: 'odds', label: '獨贏' },
+    { key: 'status', label: '狀態' }
+  ], 'name');
+}
+function renderHorseDetails(runners) {
+  const list = Array.isArray(runners) ? runners : [];
+  if (!list.length) return '<p>此場暫無排位</p>';
+  const rows = list.map((ru) => ({
+    no: ru.no == null ? '' : String(ru.no),
+    name: ru.name_ch || ru.name_en || '',
+    jockey: personName(ru.jockey),
+    trainer: personName(ru.trainer),
+    barrier: ru.barrierDrawNumber == null ? '' : String(ru.barrierDrawNumber),
+    weight: ru.handicapWeight == null ? '' : String(ru.handicapWeight),
+    body: ru.currentWeight == null ? '' : String(ru.currentWeight),
+    rating: ru.currentRating == null ? '' : String(ru.currentRating),
+    last6: ru.last6run == null ? '' : String(ru.last6run),
+    gear: ru.gearInfo == null ? '' : String(ru.gearInfo)
+  }));
+  return renderDenseRows(rows, [
+    { key: 'no', label: '馬號' },
+    { key: 'name', label: '馬名' },
+    { key: 'jockey', label: '騎師' },
+    { key: 'trainer', label: '練馬師' },
+    { key: 'barrier', label: '檔位' },
+    { key: 'weight', label: '負磅' },
+    { key: 'body', label: '體重' },
+    { key: 'rating', label: '評分' },
+    { key: 'last6', label: '近績' },
+    { key: 'gear', label: '配備' }
+  ], 'name');
+}
+function renderSingleRace(race, nodes) {
+  if (!race) return '<p>此場暫無排位</p>';
+  const name = race.raceName_ch || race.raceName_en || '';
+  const distance = race.distance ? String(race.distance) + '米' : '';
+  const post = formatHongKongTime(race.postTime);
+  const bits = [];
+  if (distance) bits.push(distance);
+  if (post) bits.push('開跑 ' + post);
+  let html = '<h4 class="race-overview-title">第' + escapeHtml(race.no) + '場 ' + escapeHtml(name) + '</h4>';
+  if (bits.length) html += '<p class="meta">' + escapeHtml(bits.join(' · ')) + '</p>';
+  html += renderRunners(race, nodes);
+  return html;
+}
+function renderMeetingCard(meeting) {
+  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
+  const heading = '<div class="card" data-source="current-meeting"><h3>' + headingHtml(currentMeetingHeading(meeting)) + '</h3><p class="note">' + escapeHtml(CURRENT_MEETING_LIMIT) + '</p>';
+  if (!races.length) return heading + '<p>當前會議暫無場次</p></div>';
+  const rows = races.map((race) => ({
+    no: '第' + race.no + '場',
+    name: race.raceName_ch || race.raceName_en || '',
+    distance: race.distance ? String(race.distance) + '米' : '',
+    post: formatHongKongTime(race.postTime)
+  }));
+  return heading + renderDenseRows(rows, [
+    { key: 'no', label: '場次' },
+    { key: 'name', label: '賽事' },
+    { key: 'distance', label: '途程' },
+    { key: 'post', label: '開跑' }
+  ], 'name') + '</div>';
+}
+function renderOfficialRunners(runners) {
+  const list = Array.isArray(runners) ? runners : [];
+  if (!list.length) return '<p>此場沒有已刊出名次。</p>';
+  const rows = list.map((runner) => ({
+    position: runner.position == null ? '' : String(runner.position),
+    no: runner.no == null ? '' : String(runner.no),
+    name: runner.name_ch || '',
+    jockey: runner.jockey_ch || '',
+    trainer: runner.trainer_ch || '',
+    weight: runner.actualWeight == null ? '' : String(runner.actualWeight),
+    barrier: runner.barrier == null ? '' : String(runner.barrier)
+  }));
+  return '<p class="meta">以下名次來自官方賽果網頁，不是當前會議排位。</p>' + renderDenseRows(rows, [
+    { key: 'position', label: '名次' },
+    { key: 'no', label: '馬號' },
+    { key: 'name', label: '馬名' },
+    { key: 'jockey', label: '騎師' },
+    { key: 'trainer', label: '練馬師' },
+    { key: 'weight', label: '實際負磅' },
+    { key: 'barrier', label: '檔位' }
+  ], 'name');
+}
+function renderDividends(dividends) {
+  const list = Array.isArray(dividends) ? dividends : [];
+  if (!list.length) return '';
+  const rows = list.map((item) => ({
+    pool: item.pool || '',
+    combination: item.combination || '',
+    dividend: item.dividend || ''
+  }));
+  return '<p class="meta">官方派彩。這是已結束賽事的派彩，不是當前會議的獨贏賠率。</p>' + renderDenseRows(rows, [
+    { key: 'pool', label: '彩池' },
+    { key: 'combination', label: '勝出組合' },
+    { key: 'dividend', label: '派彩 (HK$)' }
+  ], 'pool');
+}
+function renderOfficialMeeting(meeting) {
+  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
+  if (!races.length) return '<p>此日期及馬場沒有已刊出的官方賽果。</p>';
+  let html = '<p class="official-note">' + headingHtml(officialResultsHeading(meeting)) + '。場次跟隨該日已刊出賽果，不是當前會議。</p>';
+  races.forEach((race) => {
+    const name = race.raceName_ch || '';
+    html += '<h4 class="race-overview-title">第' + escapeHtml(race.no) + '場 ' + escapeHtml(name) + '</h4>';
+    if (race.detail) html += '<p class="meta">' + escapeHtml(race.detail) + '</p>';
+    html += renderOfficialRunners(race.runners);
+    html += renderDividends(race.dividends);
+  });
+  return html;
+}
+function renderPrediction(predictions, runners, raceNo) {
+  const list = Array.isArray(predictions) ? predictions : [];
+  const rows = list.map((item, index) => {
+    const horseNo = Number.parseInt(item.horse, 10);
+    const name = predictionHorseName(runners, item.horse);
+    return {
+      rank: String(index + 1),
+      no: Number.isInteger(horseNo) ? String(horseNo) : String(item.horse == null ? '' : item.horse),
+      name: name || '—',
+      odds: item.odds == null ? '' : String(item.odds),
+      winProb: item.winProb == null ? '' : String(item.winProb) + '%',
+      confidence: item.confidence == null ? '' : String(item.confidence)
+    };
+  });
+  return '<p class="meta">當前會議 · 第' + escapeHtml(raceNo) + '場 · 獨贏</p>' + renderDenseRows(rows, [
+    { key: 'rank', label: '排名' },
+    { key: 'no', label: '馬號' },
+    { key: 'name', label: '馬名' },
+    { key: 'odds', label: '賠率' },
+    { key: 'winProb', label: '勝出概率' },
+    { key: 'confidence', label: '信心' }
+  ], 'name');
+}
+function predictionView(input) {
+  const phase = input && input.phase;
+  const hasRaceOptions = !!(input && input.hasRaceOptions);
+  if (phase === 'results') {
+    if (!hasRaceOptions) return '<p>' + escapeHtml(EMPTY_MEETING_TEXT) + '</p>';
+    const predictions = input && Array.isArray(input.predictions) ? input.predictions : [];
+    if (!predictions.length) return '<p>暫無足夠數據</p>';
+    return renderPrediction(predictions, input.runners, input.raceNo);
+  }
+  const state = meetingPanelState({ phase: phase, hasRaceOptions: hasRaceOptions });
+  if (state.kind === 'loading' || state.kind === 'calculating') return '<div class="loading">' + escapeHtml(state.text) + '</div>';
+  if (state.kind === 'error') return '<div class="error">' + escapeHtml(state.text) + '</div>';
+  return '<p>' + escapeHtml(state.text) + '</p>';
+}
+function dashboardMode(payload) {
+  if (!payload || payload.success !== true) return 'error';
+  const list = Array.isArray(payload.data) ? payload.data : [];
+  if (!list.length) return 'official-fallback';
+  return 'current';
+}
+function officialFallbackQueries(today, days) {
+  const count = Number.isInteger(days) && days > 0 ? days : OFFICIAL_LOOKBACK_DAYS;
+  const queries = [];
+  for (let offset = 0; offset < count; offset += 1) {
+    const date = shiftCalendarDate(today, -offset);
+    if (!date) break;
+    queries.push({ type: 'official-results', date: date, venue: 'ST' });
+    queries.push({ type: 'official-results', date: date, venue: 'HV' });
+  }
+  return queries;
+}
+function publishedRunnerCount(meeting) {
+  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
+  let count = 0;
+  races.forEach((race) => {
+    const runners = race && Array.isArray(race.runners) ? race.runners : [];
+    runners.forEach((runner) => {
+      if (runner && (runner.name_ch || runner.position)) count += 1;
+    });
+  });
+  return count;
+}
+function classifyOfficialAttempt(query, res) {
+  const empty = { date: query.date, venue: query.venue, ok: false, raceCount: 0, published: 0, meeting: null };
+  if (!res || res.success !== true || res.officialResults !== true || res.currentMeeting !== false) return empty;
+  if (res.date !== query.date || res.venue !== query.venue) return empty;
+  const races = res.data && Array.isArray(res.data.races) ? res.data.races : null;
+  if (!races) return empty;
+  return {
+    date: query.date,
+    venue: query.venue,
+    ok: true,
+    raceCount: races.length,
+    published: publishedRunnerCount(res.data),
+    meeting: res.data
+  };
+}
+function summarizeOfficialFallback(attempts) {
+  const list = Array.isArray(attempts) ? attempts : [];
+  const hits = list.filter((item) => item && item.ok && item.published > 0);
+  if (hits.length) {
+    const date = hits[0].date;
+    const chosen = hits.filter((item) => item.date === date);
+    return { kind: 'results', date: date, venues: chosen.map((item) => item.venue), meetings: chosen.map((item) => item.meeting) };
+  }
+  if (list.some((item) => item && item.ok === false)) return { kind: 'error', date: '', venues: [], meetings: [] };
+  return { kind: 'none', date: '', venues: [], meetings: [] };
+}
+async function collectLatestOfficial(today, fetchOfficial, days) {
+  const queries = officialFallbackQueries(today, days);
+  const attempts = [];
+  for (let index = 0; index < queries.length; index += OFFICIAL_FALLBACK_BATCH) {
+    const batch = queries.slice(index, index + OFFICIAL_FALLBACK_BATCH);
+    const rows = await Promise.all(batch.map(async (query) => {
+      try {
+        const res = await fetchOfficial(query);
+        return classifyOfficialAttempt(query, res);
+      } catch (error) {
+        return { date: query.date, venue: query.venue, ok: false, raceCount: 0, published: 0, meeting: null };
+      }
+    }));
+    attempts.push.apply(attempts, rows);
+    if (summarizeOfficialFallback(attempts).kind === 'results') break;
+  }
+  return { summary: summarizeOfficialFallback(attempts), attempts: attempts };
+}
+function renderDashboardEmpty(summary) {
+  let html = '<div class="card" data-source="current-meeting"><h3>當前會議</h3><p class="note">' + escapeHtml(CURRENT_MEETING_LIMIT) + '</p><p>' + escapeHtml(EMPTY_MEETING_TEXT) + '</p></div>';
+  if (summary && summary.kind === 'loading') {
+    return html + '<div class="loading">載入最新官方賽果...</div>';
+  }
+  if (!summary || summary.kind === 'error') {
+    return html + '<div class="error">' + escapeHtml(SOURCE_ERROR_TEXT) + '</div>';
+  }
+  if (summary.kind !== 'results') {
+    return html + '<div class="card" data-source="official-results"><h3>最新官方賽果</h3><p>近日沒有已刊出的官方賽果。</p></div>';
+  }
+  html += '<div data-source="official-results">';
+  const meetings = Array.isArray(summary.meetings) ? summary.meetings : [];
+  meetings.forEach((meeting) => {
+    html += '<div class="card"><h3>' + headingHtml(officialResultsHeading(meeting)) + '</h3>';
+    html += '<p class="official-note">目前沒有當前會議，以下是最近一次已刊出的官方賽果。日期及馬場只用於查閱官方賽果，不會篩選當前會議。來源是官方賽果網頁。</p>';
+    html += renderOfficialMeeting(meeting);
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+// pure-end
+function setHeading(id, text) {
+  const node = document.getElementById(id);
+  if (node) node.innerHTML = headingHtml(text);
+}
 function fillRaceSelect(select, meeting) {
   if (!select) return [];
   const previous = select.value;
@@ -210,30 +674,17 @@ function fillRaceSelect(select, meeting) {
   if (previous && values.indexOf(previous) !== -1) select.value = previous;
   return values;
 }
-function renderRunners(race, nodes) {
-  const runners = race && Array.isArray(race.runners) ? race.runners : [];
-  if (!runners.length) return '<p>此場暫無排位</p>';
-  let html = '<table><tr><th>馬號</th><th>馬名</th><th>騎師</th><th>練馬師</th><th>檔位</th><th>負磅</th><th>獨贏</th><th>狀態</th></tr>';
-  for (const ru of runners) {
-    const odds = oddsForRunner(nodes, ru.no);
-    html += '<tr><td>' + escapeHtml(ru.no ?? '') + '</td><td>' + escapeHtml(ru.name_ch || ru.name_en || '') + '</td><td>' + escapeHtml(personName(ru.jockey)) + '</td><td>' + escapeHtml(personName(ru.trainer)) + '</td><td>' + escapeHtml(ru.barrierDrawNumber ?? '') + '</td><td>' + escapeHtml(ru.handicapWeight ?? '') + '</td><td><strong>' + escapeHtml(odds || '—') + '</strong></td><td>' + escapeHtml(runnerStatusLabel(ru.status)) + '</td></tr>';
-  }
-  return html + '</table>';
-}
-function renderMeetingCard(meeting) {
-  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
-  const rows = races.map((race) => {
-    const name = race.raceName_ch || race.raceName_en || '';
-    const distance = race.distance ? race.distance + '米' : '';
-    return '<tr><td>第' + escapeHtml(race.no) + '場</td><td>' + escapeHtml(name) + '</td><td>' + escapeHtml(distance) + '</td><td>' + escapeHtml(formatHongKongTime(race.postTime)) + '</td></tr>';
-  }).join('');
-  return '<div class="card"><h3>' + escapeHtml(currentMeetingHeading(meeting)) + '</h3><p class="note">' + escapeHtml(CURRENT_MEETING_LIMIT) + '</p><table><tr><th>場次</th><th>賽事</th><th>途程</th><th>開跑</th></tr>' + rows + '</table></div>';
-}
-function showPage(id) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+function showPage(id, button) {
+  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach((b) => {
+    b.classList.remove('active');
+    b.removeAttribute('aria-current');
+  });
   document.getElementById(id).classList.add('active');
-  event.target.classList.add('active');
+  if (button) {
+    button.classList.add('active');
+    button.setAttribute('aria-current', 'page');
+  }
   if (id === 'dashboard') loadDashboard();
   if (id === 'race') startOddsTracking();
   if (id === 'results') loadRaceCard();
@@ -252,26 +703,43 @@ function primaryMeeting() {
 }
 async function loadMeetingsInto(target) {
   const r = await fetchAPI('meetings');
-  if (!r.success) {
+  if (!r || r.success !== true) {
     if (target) target.innerHTML = sourceFailureHtml(r);
     return null;
   }
   currentMeetings = Array.isArray(r.data) ? r.data : [];
   return r;
 }
+function setTrendVisible(visible) {
+  const block = document.getElementById('odds-chart-block');
+  const heading = document.getElementById('odds-barrier-heading');
+  if (block) block.hidden = !visible;
+  if (heading) heading.hidden = !visible;
+}
 async function loadDashboard() {
   const el = document.getElementById('dashboard-content');
-  el.innerHTML = '<div class="loading">載入中...</div>';
+  const token = ++dashboardRequest;
+  el.innerHTML = '<div class="loading">' + escapeHtml(LOADING_TEXT) + '</div>';
   try {
-    const r = await loadMeetingsInto(el);
-    if (!r) return;
-    if (!currentMeetings.length) {
-      el.innerHTML = '<div class="card"><h3>當前會議</h3><p class="note">' + escapeHtml(CURRENT_MEETING_LIMIT) + '</p><p>目前沒有當前會議</p></div>';
+    const loaded = await loadMeetingsInto(el);
+    if (token !== dashboardRequest) return;
+    if (!loaded) return;
+    const mode = dashboardMode(loaded);
+    if (mode === 'current') {
+      el.innerHTML = currentMeetings.map(renderMeetingCard).join('');
       return;
     }
-    el.innerHTML = currentMeetings.map(renderMeetingCard).join('');
+    if (mode !== 'official-fallback') {
+      el.innerHTML = sourceFailureHtml(loaded);
+      return;
+    }
+    el.innerHTML = renderDashboardEmpty({ kind: 'loading' });
+    const latest = await collectLatestOfficial(hongKongCalendarDate(new Date()), (query) => fetchAPI('official-results', { date: query.date, venue: query.venue }), OFFICIAL_LOOKBACK_DAYS);
+    if (token !== dashboardRequest) return;
+    el.innerHTML = renderDashboardEmpty(latest.summary);
   } catch (e) {
-    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    if (token !== dashboardRequest) return;
+    el.innerHTML = '<div class="error">' + escapeHtml(SOURCE_ERROR_TEXT) + '</div>';
   }
 }
 function initChart() {
@@ -301,12 +769,14 @@ async function updateOddsChart(raceNo) {
     if (token !== oddsRequest) return;
     if (String(document.getElementById('race-select').value) !== String(raceNo)) return;
     if (!r.success) {
+      setTrendVisible(!!race);
       box.innerHTML = (race ? renderRunners(race, []) : '') + sourceFailureHtml(r);
       return;
     }
     if (String(r.race) !== String(raceNo)) return;
     const nodes = r.data?.[0]?.oddsNodes || [];
     const updated = r.data?.[0]?.lastUpdateTime;
+    setTrendVisible(true);
     let html = renderRunners(race, nodes);
     if (updated) html += '<p class="meta">獨贏更新 ' + escapeHtml(formatHongKongTime(updated)) + '（香港時間）</p>';
     box.innerHTML = html;
@@ -317,155 +787,145 @@ async function updateOddsChart(raceNo) {
     h.labels.push(formatHongKongTime(new Date()));
     h.data.push(price);
     if (h.labels.length > 10) { h.labels.shift(); h.data.shift(); }
-    if (oddsChart) { oddsChart.data.labels = h.labels; oddsChart.data.datasets[0].data = h.data; oddsChart.update(); }
+    if (oddsChart) { oddsChart.data.labels = h.labels; oddsChart.data.datasets[0].data = h.data; oddsChart.resize(); oddsChart.update(); }
   } catch (e) {
-    box.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    box.innerHTML = '<div class="error">' + escapeHtml(SOURCE_ERROR_TEXT) + '</div>';
   }
 }
 async function startOddsTracking() {
   if (refreshInterval) clearInterval(refreshInterval);
   const box = document.getElementById('odds-table');
-  box.innerHTML = '<div class="loading">載入中...</div>';
-  initChart();
+  box.innerHTML = meetingStatusHtml('loading', false);
+  setTrendVisible(false);
   try {
     const loaded = await loadMeetingsInto(box);
     if (!loaded) return;
     const meeting = primaryMeeting();
-    document.getElementById('race-heading').textContent = currentMeetingHeading(meeting);
-    const values = fillRaceSelect(document.getElementById('race-select'), meeting);
-    if (!values.length) {
-      box.innerHTML = '<p>目前沒有當前會議</p>';
+    setHeading('race-heading', currentMeetingHeading(meeting));
+    const select = document.getElementById('race-select');
+    const values = fillRaceSelect(select, meeting);
+    const status = meetingStatusHtml('loaded', values.length > 0);
+    if (status) {
+      setTrendVisible(false);
+      box.innerHTML = status;
       return;
     }
-    const raceNo = document.getElementById('race-select').value;
+    setTrendVisible(true);
+    initChart();
+    const raceNo = select.value;
     await updateOddsChart(raceNo);
     if (!document.getElementById('race').classList.contains('active')) return;
     refreshInterval = setInterval(() => updateOddsChart(document.getElementById('race-select').value), 15000);
   } catch (e) {
-    box.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    box.innerHTML = meetingStatusHtml('error', false);
   }
 }
 async function loadRaceCard() {
   const el = document.getElementById('results-content');
-  el.innerHTML = '<div class="loading">載入中...</div>';
+  const select = document.getElementById('card-race');
+  const token = ++cardRequest;
+  el.innerHTML = meetingStatusHtml('loading', false);
   try {
     const loaded = await loadMeetingsInto(el);
-    if (!loaded) return;
-    if (!currentMeetings.length) {
-      document.getElementById('card-heading').textContent = '當前會議';
-      el.innerHTML = '<p>目前沒有當前會議</p>';
+    if (token !== cardRequest) return;
+    if (!loaded) {
+      setHeading('card-heading', '當前會議');
       return;
     }
-    document.getElementById('card-heading').textContent = currentMeetings.length === 1 ? currentMeetingHeading(currentMeetings[0]) : '當前會議';
-    let html = '';
-    for (const meeting of currentMeetings) {
-      const races = Array.isArray(meeting.races) ? meeting.races : [];
-      html += '<h3>' + escapeHtml(currentMeetingHeading(meeting)) + '</h3>';
-      if (!races.length) {
-        html += '<p>當前會議暫無場次</p>';
-        continue;
-      }
-      const oddsList = await Promise.all(races.map((race) => fetchAPI('odds', { race: String(race.no) })));
-      const failed = oddsList.find((item) => !item.success);
-      if (failed) html += sourceFailureHtml(failed);
-      races.forEach((race, index) => {
-        const oddsPayload = oddsList[index];
-        const odds = oddsPayload && oddsPayload.success && String(oddsPayload.race) === String(Number(race.no)) ? (oddsPayload.data?.[0]?.oddsNodes || []) : [];
-        const name = race.raceName_ch || race.raceName_en || '';
-        const distance = race.distance ? race.distance + '米' : '';
-        html += '<h4 style="margin:16px 0 6px;">第' + escapeHtml(race.no) + '場 ' + escapeHtml(name) + ' ' + escapeHtml(distance) + ' ' + escapeHtml(formatHongKongTime(race.postTime)) + '</h4>';
-        html += renderRunners(race, odds);
-      });
+    const meeting = primaryMeeting();
+    setHeading('card-heading', currentMeetingHeading(meeting));
+    const values = fillRaceSelect(select, meeting);
+    const status = meetingStatusHtml('loaded', values.length > 0);
+    if (status) {
+      el.innerHTML = status;
+      return;
     }
-    el.innerHTML = html;
+    const raceNo = select.value;
+    const race = findRace(meeting, raceNo);
+    const oddsPayload = await fetchAPI('odds', { race: String(raceNo) });
+    if (token !== cardRequest) return;
+    if (String(select.value) !== String(raceNo)) return;
+    let nodes = [];
+    let extra = '';
+    if (!oddsPayload || oddsPayload.success !== true) extra = sourceFailureHtml(oddsPayload);
+    else if (String(oddsPayload.race) === String(Number(raceNo))) nodes = oddsPayload.data?.[0]?.oddsNodes || [];
+    el.innerHTML = renderSingleRace(race, nodes) + extra;
   } catch (e) {
-    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    if (token !== cardRequest) return;
+    el.innerHTML = meetingStatusHtml('error', false);
   }
+}
+function onPredictionRaceChange() {
+  const select = document.getElementById('pred-race');
+  const el = document.getElementById('prediction-content');
+  el.innerHTML = predictionView({ phase: 'loaded', hasRaceOptions: select.options.length > 0 });
 }
 async function preparePrediction() {
   const el = document.getElementById('prediction-content');
+  const select = document.getElementById('pred-race');
+  el.innerHTML = predictionView({ phase: 'loading', hasRaceOptions: select.options.length > 0 });
   try {
     const loaded = await loadMeetingsInto(el);
     if (!loaded) return;
     const meeting = primaryMeeting();
-    document.getElementById('pred-heading').textContent = currentMeetingHeading(meeting);
-    const values = fillRaceSelect(document.getElementById('pred-race'), meeting);
-    if (!values.length) el.innerHTML = '<p>目前沒有當前會議</p>';
+    setHeading('pred-heading', currentMeetingHeading(meeting));
+    const values = fillRaceSelect(select, meeting);
+    el.innerHTML = predictionView({ phase: 'loaded', hasRaceOptions: values.length > 0 });
   } catch (e) {
-    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    el.innerHTML = predictionView({ phase: 'error', hasRaceOptions: select.options.length > 0 });
   }
 }
 async function loadPrediction() {
   const el = document.getElementById('prediction-content');
-  const race = document.getElementById('pred-race').value;
+  const select = document.getElementById('pred-race');
+  const race = select.value;
   if (!race) {
-    el.innerHTML = '<p>目前沒有當前會議</p>';
+    el.innerHTML = predictionView({ phase: 'loaded', hasRaceOptions: select.options.length > 0 });
     return;
   }
-  el.innerHTML = '<div class="loading">計算中...</div>';
+  el.innerHTML = predictionView({ phase: 'calculating', hasRaceOptions: true });
   try {
     const r = await fetchAPI('predict', { race });
     if (String(document.getElementById('pred-race').value) !== String(race)) return;
     if (!r.success) { el.innerHTML = sourceFailureHtml(r); return; }
     if (String(r.race) !== String(race)) return;
-    if (!r.predictions?.length) { el.innerHTML = '<p>暫無足夠數據</p>'; return; }
-    el.innerHTML = '<p class="meta">當前會議 · 第' + escapeHtml(r.race) + '場 · 獨贏</p><table><tr><th>排名</th><th>馬號</th><th>賠率</th><th>勝出概率</th><th>信心</th></tr>' + r.predictions.map((p, i) => {
-      const horseNo = Number.parseInt(p.horse, 10);
-      const horse = Number.isInteger(horseNo) ? String(horseNo) : p.horse;
-      return '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(horse) + '</td><td>' + escapeHtml(p.odds) + '</td><td><strong>' + escapeHtml(p.winProb) + '%</strong></td><td>' + escapeHtml(p.confidence) + '</td></tr>';
-    }).join('') + '</table>';
+    el.innerHTML = predictionView({
+      phase: 'results',
+      hasRaceOptions: true,
+      predictions: r.predictions,
+      runners: runnersForRace(primaryMeeting(), race),
+      raceNo: r.race
+    });
   } catch (e) {
-    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    el.innerHTML = predictionView({ phase: 'error', hasRaceOptions: true });
   }
 }
 function prepareOfficialResults() {
   const input = document.getElementById('official-date');
-  if (input) input.max = hongKongCalendarDate(new Date());
-}
-function renderOfficialMeeting(meeting) {
-  const races = meeting && Array.isArray(meeting.races) ? meeting.races : [];
-  if (!races.length) return '<p>此日期及馬場沒有已刊出的官方賽果。</p>';
-  let html = '<p class="official-note">' + escapeHtml(officialResultsHeading(meeting)) + '。場次跟隨該日已刊出賽果，不是當前會議。</p>';
-  for (const race of races) {
-    const name = race.raceName_ch || '';
-    html += '<h4 style="margin:16px 0 6px;">第' + escapeHtml(race.no) + '場 ' + escapeHtml(name) + '</h4>';
-    if (race.detail) html += '<p class="meta">' + escapeHtml(race.detail) + '</p>';
-    const runners = Array.isArray(race.runners) ? race.runners : [];
-    if (!runners.length) {
-      html += '<p>此場沒有已刊出名次。</p>';
-    } else {
-      html += '<p class="meta">以下名次來自官方賽果網頁，不是當前會議排位。</p>';
-      html += '<div class="table-scroll"><table><tr><th>名次</th><th>馬號</th><th>馬名</th><th>騎師</th><th>練馬師</th><th>實際負磅</th><th>檔位</th></tr>';
-      for (const runner of runners) {
-        html += '<tr><td>' + escapeHtml(runner.position ?? '') + '</td><td>' + escapeHtml(runner.no ?? '') + '</td><td>' + escapeHtml(runner.name_ch || '') + '</td><td>' + escapeHtml(runner.jockey_ch || '') + '</td><td>' + escapeHtml(runner.trainer_ch || '') + '</td><td>' + escapeHtml(runner.actualWeight ?? '') + '</td><td>' + escapeHtml(runner.barrier ?? '') + '</td></tr>';
-      }
-      html += '</table></div>';
-    }
-    const dividends = Array.isArray(race.dividends) ? race.dividends : [];
-    if (dividends.length) {
-      html += '<p class="meta">官方派彩。這是已結束賽事的派彩，不是當前會議的獨贏賠率。</p>';
-      html += '<div class="table-scroll"><table><tr><th>彩池</th><th>勝出組合</th><th>派彩 (HK$)</th></tr>';
-      for (const item of dividends) {
-        html += '<tr><td>' + escapeHtml(item.pool || '') + '</td><td>' + escapeHtml(item.combination || '') + '</td><td>' + escapeHtml(item.dividend || '') + '</td></tr>';
-      }
-      html += '</table></div>';
-    }
+  const hint = document.getElementById('official-date-hint');
+  const today = hongKongCalendarDate(new Date());
+  if (input) {
+    input.placeholder = 'YYYY-MM-DD';
+    input.lang = 'zh-HK';
   }
-  return html;
+  if (hint && today) hint.innerHTML = headingHtml(officialDateHint(today));
 }
-async function loadOfficialResults() {
+async function loadOfficialResults(event) {
+  if (event && event.preventDefault) event.preventDefault();
   const el = document.getElementById('official-content');
-  const date = document.getElementById('official-date').value;
+  const input = document.getElementById('official-date');
+  const date = normalizeOfficialDateInput(input.value);
   const venue = document.getElementById('official-venue').value;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    el.innerHTML = '<div class="error">請輸入有效的賽事日期。</div>';
+  if (!date) {
+    el.innerHTML = '<div class="error">請以年-月-日（YYYY-MM-DD）輸入有效的賽事日期。</div>';
     return;
   }
+  input.value = date;
   if (venue !== 'ST' && venue !== 'HV') {
     el.innerHTML = '<div class="error">請選擇馬場。</div>';
     return;
   }
-  el.innerHTML = '<div class="loading">載入中...</div>';
+  el.innerHTML = '<div class="loading">' + escapeHtml(LOADING_TEXT) + '</div>';
   try {
     const r = await fetchAPI('official-results', { date, venue });
     if (document.getElementById('official-date').value !== date || document.getElementById('official-venue').value !== venue) return;
@@ -474,34 +934,34 @@ async function loadOfficialResults() {
       return;
     }
     if (!r.officialResults || r.currentMeeting !== false || r.date !== date || r.venue !== venue) {
-      el.innerHTML = sourceFailureHtml({ message: '暫時無法取得賽事資料' });
+      el.innerHTML = sourceFailureHtml({ message: SOURCE_ERROR_TEXT });
       return;
     }
-    document.getElementById('official-heading').textContent = officialResultsHeading(r.data);
+    setHeading('official-heading', officialResultsHeading(r.data));
     el.innerHTML = renderOfficialMeeting(r.data);
   } catch (e) {
-    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    el.innerHTML = '<div class="error">' + escapeHtml(SOURCE_ERROR_TEXT) + '</div>';
   }
 }
 async function loadHorseDetails() {
   const el = document.getElementById('horse-content');
-  el.innerHTML = '<div class="loading">載入中...</div>';
+  el.innerHTML = meetingStatusHtml('loading', false);
   try {
     const loaded = await loadMeetingsInto(el);
     if (!loaded) return;
     const meeting = primaryMeeting();
-    document.getElementById('horse-heading').textContent = currentMeetingHeading(meeting);
-    const values = fillRaceSelect(document.getElementById('horse-race'), meeting);
-    if (!values.length) {
-      el.innerHTML = '<p>目前沒有當前會議</p>';
+    setHeading('horse-heading', currentMeetingHeading(meeting));
+    const select = document.getElementById('horse-race');
+    const values = fillRaceSelect(select, meeting);
+    const status = meetingStatusHtml('loaded', values.length > 0);
+    if (status) {
+      el.innerHTML = status;
       return;
     }
-    const race = findRace(meeting, document.getElementById('horse-race').value);
-    const runners = race && Array.isArray(race.runners) ? race.runners : [];
-    if (!runners.length) { el.innerHTML = '<p>此場暫無排位</p>'; return; }
-    el.innerHTML = '<table><tr><th>馬號</th><th>馬名</th><th>騎師</th><th>練馬師</th><th>檔位</th><th>負磅</th><th>體重</th><th>評分</th><th>近績</th><th>配備</th></tr>' + runners.map((ru) => '<tr><td>' + escapeHtml(ru.no ?? '') + '</td><td>' + escapeHtml(ru.name_ch || ru.name_en || '') + '</td><td>' + escapeHtml(personName(ru.jockey)) + '</td><td>' + escapeHtml(personName(ru.trainer)) + '</td><td>' + escapeHtml(ru.barrierDrawNumber ?? '') + '</td><td>' + escapeHtml(ru.handicapWeight ?? '') + '</td><td>' + escapeHtml(ru.currentWeight ?? '') + '</td><td>' + escapeHtml(ru.currentRating ?? '') + '</td><td>' + escapeHtml(ru.last6run ?? '') + '</td><td>' + escapeHtml(ru.gearInfo ?? '') + '</td></tr>').join('') + '</table>';
+    const runners = runnersForRace(meeting, select.value);
+    el.innerHTML = renderHorseDetails(runners);
   } catch (e) {
-    el.innerHTML = '<div class="error">暫時無法取得賽事資料</div>';
+    el.innerHTML = meetingStatusHtml('error', false);
   }
 }
 document.addEventListener('DOMContentLoaded', () => { loadDashboard(); });
