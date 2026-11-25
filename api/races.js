@@ -1,6 +1,7 @@
 // /api/races.js
 import { RACE_MEETINGS_QUERY, WIN_POOL_QUERY } from './officialQueries.js';
 import { loadOfficialResults, parseRaceCalendarDate, parseVenueCode } from './officialResults.js';
+import { PACK_S_MODEL, isPackSEnabled, predictWithPackS } from './packS.js';
 
 const GRAPHQL_URL = 'https://info.cld.hkjc.com/graphql/base/';
 const HEADERS = { 'Content-Type': 'application/json', 'Accept': '*/*', 'Origin': 'https://bet.hkjc.com', 'Referer': 'https://bet.hkjc.com/', 'User-Agent': 'Mozilla/5.0' };
@@ -178,6 +179,19 @@ function meetingList(data) {
   return Array.isArray(meetings) ? meetings : [];
 }
 
+// First card in the current-meeting payload. Request date and venue are not filters.
+export function currentMeetingRace(data, raceNo) {
+  const target = parseRaceNo(raceNo);
+  if (target == null) return null;
+  const meetings = meetingList(data);
+  const first = meetings[0];
+  const races = first && Array.isArray(first.races) ? first.races : [];
+  for (const race of races) {
+    if (race && parseRaceNo(race.no) === target) return race;
+  }
+  return null;
+}
+
 function sendCurrentMeetings(res, meetings) {
   return res.status(200).json({
     success: true,
@@ -187,7 +201,7 @@ function sendCurrentMeetings(res, meetings) {
   });
 }
 
-function predictFromNodes(nodes) {
+export function predictFromNodes(nodes) {
   return nodes.map((n) => {
     const oddsVal = parseFloat(n.oddsValue) || 99;
     const prob = Math.min(95, Math.max(5, 100 / oddsVal * 1.2));
@@ -200,7 +214,7 @@ function predictFromNodes(nodes) {
   }).sort((a, b) => b.winProb - a.winProb).slice(0, 5);
 }
 
-export function createHandler({ fetch: doFetch = globalThis.fetch } = {}) {
+export function createHandler({ fetch: doFetch = globalThis.fetch, env = process.env } = {}) {
   return async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     try {
@@ -251,12 +265,25 @@ export function createHandler({ fetch: doFetch = globalThis.fetch } = {}) {
           });
         }
         const nodes = Array.isArray(win?.oddsNodes) ? win.oddsNodes : [];
+        // GP_PACK_S defaults off. Only the exact string "1" enables Size S.
+        // Coefficients live in packS.js and are unmeasured defaults, not a go-live approval.
+        if (!isPackSEnabled(env)) {
+          return res.status(200).json({
+            success: true,
+            currentMeeting: true,
+            race: raceNo,
+            predictions: predictFromNodes(nodes),
+            model: 'Odds-based probability model'
+          });
+        }
+        const card = await gql(RACE_MEETINGS_QUERY, {}, doFetch);
+        if (!card.ok) return sendSourceFailure(res, card.code);
         return res.status(200).json({
           success: true,
           currentMeeting: true,
           race: raceNo,
-          predictions: predictFromNodes(nodes),
-          model: 'Odds-based probability model'
+          predictions: predictWithPackS(nodes, currentMeetingRace(card.data, raceNo)),
+          model: PACK_S_MODEL
         });
       }
 
