@@ -1,6 +1,14 @@
 // /api/races.js
 import { RACE_MEETINGS_QUERY, WIN_POOL_QUERY } from './officialQueries.js';
 import { loadOfficialResults, parseRaceCalendarDate, parseVenueCode } from './officialResults.js';
+import {
+  FEATURE_CONDITION_COEFFICIENT_BASIS,
+  FEATURE_CONDITIONS_MODEL,
+  currentMeetingKey,
+  isFeatureConditionsEnabled,
+  loadFeatureSources,
+  predictFromFeatureConditions
+} from './featureConditions.js';
 import { PACK_S_MODEL, isPackSEnabled, predictWithPackS } from './packS.js';
 
 const GRAPHQL_URL = 'https://info.cld.hkjc.com/graphql/base/';
@@ -192,6 +200,25 @@ export function currentMeetingRace(data, raceNo) {
   return null;
 }
 
+async function predictFeatureConditions(raceNo, doFetch) {
+  const card = await gql(RACE_MEETINGS_QUERY, {}, doFetch);
+  if (!card.ok) return card;
+  const meetings = meetingList(card.data);
+  const meeting = meetings[0];
+  const race = currentMeetingRace(card.data, raceNo);
+  if (!meeting || !race) return { ok: true, predictions: [] };
+  const key = currentMeetingKey(meeting);
+  if (!key) return { ok: false, code: 'SOURCE_ERROR' };
+  const loaded = await loadFeatureSources({
+    date: key.date,
+    venue: key.venue,
+    raceNo,
+    fetch: doFetch
+  });
+  if (!loaded.ok) return loaded;
+  return { ok: true, predictions: predictFromFeatureConditions(race, loaded.sources) };
+}
+
 function sendCurrentMeetings(res, meetings) {
   return res.status(200).json({
     success: true,
@@ -252,6 +279,20 @@ export function createHandler({ fetch: doFetch = globalThis.fetch, env = process
       if (type === 'odds' || type === 'predict') {
         const raceNo = parseRaceNo(race);
         if (raceNo == null) return res.status(400).json({ success: false, error: 'Invalid race' });
+        // GP_FEATURE_CONDITIONS defaults off. Only the exact string "1" leaves the odds path.
+        // The feature path does not read WIN or PLA odds and does not call predictFromNodes.
+        if (type === 'predict' && isFeatureConditionsEnabled(env)) {
+          const featured = await predictFeatureConditions(raceNo, doFetch);
+          if (!featured.ok) return sendSourceFailure(res, featured.code);
+          return res.status(200).json({
+            success: true,
+            currentMeeting: true,
+            race: raceNo,
+            predictions: featured.predictions,
+            model: FEATURE_CONDITIONS_MODEL,
+            coefficientBasis: FEATURE_CONDITION_COEFFICIENT_BASIS
+          });
+        }
         const result = await gql(WIN_POOL_QUERY, { oddsTypes: ['WIN'], raceNo }, doFetch);
         if (!result.ok) return sendSourceFailure(res, result.code);
         const pools = result.data?.raceMeetings?.[0]?.pmPools || [];
