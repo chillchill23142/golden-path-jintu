@@ -216,13 +216,21 @@ test('prediction keeps horse names and does not leave the empty-meeting line aft
   assert.match(results, /爆熱/);
   assert.match(results, /34\.3%/);
   assert.match(results, /horse-cards/);
+  assert.match(results, /當前會議 · 第3場 · 獨贏/);
+  assert.match(results, /<th>勝出概率<\/th>/);
+  assert.match(results, /<th>賠率<\/th>/);
+  assert.match(results, /<th>信心<\/th>/);
+  assert.equal(results.includes('特徵指數'), false);
+  assert.equal(results.includes('特徵條件'), false);
   assert.equal(results.includes('目前沒有當前會議'), false);
 
   const prepare = fnSource('preparePrediction', 'async function loadPrediction');
   const predict = fnSource('loadPrediction', 'function prepareOfficialResults');
-  assert.match(prepare, /predictionView/);
+  assert.match(prepare, /predictionPanel/);
   assert.equal(prepare.includes('目前沒有當前會議'), false);
-  assert.match(predict, /predictionView/);
+  assert.match(predict, /predictionPanel/);
+  assert.match(predict, /model: r\.model/);
+  assert.match(predict, /coefficientBasis: r\.coefficientBasis/);
   assert.equal(predict.includes('目前沒有當前會議'), false);
 });
 

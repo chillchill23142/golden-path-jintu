@@ -165,7 +165,8 @@ footer { text-align:center; padding:16px; color:var(--text-dim); font-size:12px;
   <section id="prediction" class="page">
     <div class="card">
       <h3 id="pred-heading">當前會議</h3>
-      <p class="note">預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。頁面沒有改為讀取晨操、試閘或傷患。</p>
+      <p class="note" id="pred-note">預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。沒有使用晨操、試閘、傷患或其他特徵條件。</p>
+      <p class="meta" id="pred-feature-meta" hidden></p>
       <div class="toolbar">
         <label for="pred-race">場次</label>
         <select id="pred-race" onchange="onPredictionRaceChange()"></select>
@@ -195,6 +196,11 @@ const LOADING_TEXT = '載入中...';
 const SOURCE_ERROR_TEXT = '暫時無法取得賽事資料';
 const PREDICTION_READY_TEXT = '選擇場次後執行預測';
 const PREDICTION_CALCULATING_TEXT = '計算中...';
+const PREDICTION_ODDS_NOTE = '預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。沒有使用晨操、試閘、傷患或其他特徵條件。';
+const PREDICTION_FEATURE_NOTE = '此列按特徵條件計分，不根據獨贏或位置賠率。只限當前會議，不能按日期或馬場查詢其他賽事。';
+const PREDICTION_FEATURE_META = '條件包括跑道與路程、晨操與試閘觀察、配備、傷患、跑法、檔位、騎練配對及已宣告負磅。目前只有檔位與負磅會改指數；晨操、試閘與傷患會讀取，但係數為 0，不改名次。跑法現時沒有賽前官方標籤，沿途走勢評述不會當作跑法。指數是未校準的實作預設，不是已校準或已上線的新模型。';
+const PREDICTION_FEATURE_MODEL = 'Unmeasured feature conditions (no odds baseline)';
+const PREDICTION_FEATURE_BASIS = 'unmeasured-defaults';
 const CURRENT_MEETING_LIMIT = '只顯示馬會目前回傳的當前會議，不能按日期或馬場查詢其他賽事。';
 const OFFICIAL_LOOKBACK_DAYS = 56;
 const OFFICIAL_FALLBACK_BATCH = 14;
@@ -524,28 +530,41 @@ function renderOfficialMeeting(meeting) {
   });
   return html;
 }
-function renderPrediction(predictions, runners, raceNo) {
+function predictionUsesFeatureCopy(model, coefficientBasis) {
+  return model === PREDICTION_FEATURE_MODEL && coefficientBasis === PREDICTION_FEATURE_BASIS;
+}
+function renderPrediction(predictions, runners, raceNo, model, coefficientBasis) {
+  const feature = predictionUsesFeatureCopy(model, coefficientBasis);
   const list = Array.isArray(predictions) ? predictions : [];
   const rows = list.map((item, index) => {
     const horseNo = Number.parseInt(item.horse, 10);
     const name = predictionHorseName(runners, item.horse);
+    let winProb = '';
+    if (item.winProb != null) {
+      winProb = String(item.winProb);
+      if (!feature) winProb += '%';
+    }
     return {
       rank: String(index + 1),
       no: Number.isInteger(horseNo) ? String(horseNo) : String(item.horse == null ? '' : item.horse),
       name: name || '—',
       odds: item.odds == null ? '' : String(item.odds),
-      winProb: item.winProb == null ? '' : String(item.winProb) + '%',
+      winProb: winProb,
       confidence: item.confidence == null ? '' : String(item.confidence)
     };
   });
-  return '<p class="meta">當前會議 · 第' + escapeHtml(raceNo) + '場 · 獨贏</p>' + renderDenseRows(rows, [
+  const columns = [
     { key: 'rank', label: '排名' },
     { key: 'no', label: '馬號' },
-    { key: 'name', label: '馬名' },
-    { key: 'odds', label: '賠率' },
-    { key: 'winProb', label: '勝出概率' },
-    { key: 'confidence', label: '信心' }
-  ], 'name');
+    { key: 'name', label: '馬名' }
+  ];
+  if (!feature) columns.push({ key: 'odds', label: '賠率' });
+  columns.push(
+    { key: 'winProb', label: feature ? '特徵指數' : '勝出概率' },
+    { key: 'confidence', label: feature ? '量度' : '信心' }
+  );
+  const title = feature ? '特徵條件（未校準）' : '獨贏';
+  return '<p class="meta">當前會議 · 第' + escapeHtml(raceNo) + '場 · ' + title + '</p>' + renderDenseRows(rows, columns, 'name');
 }
 function predictionView(input) {
   const phase = input && input.phase;
@@ -554,12 +573,22 @@ function predictionView(input) {
     if (!hasRaceOptions) return '<p>' + escapeHtml(EMPTY_MEETING_TEXT) + '</p>';
     const predictions = input && Array.isArray(input.predictions) ? input.predictions : [];
     if (!predictions.length) return '<p>暫無足夠數據</p>';
-    return renderPrediction(predictions, input.runners, input.raceNo);
+    return renderPrediction(predictions, input.runners, input.raceNo, input && input.model, input && input.coefficientBasis);
   }
   const state = meetingPanelState({ phase: phase, hasRaceOptions: hasRaceOptions });
   if (state.kind === 'loading' || state.kind === 'calculating') return '<div class="loading">' + escapeHtml(state.text) + '</div>';
   if (state.kind === 'error') return '<div class="error">' + escapeHtml(state.text) + '</div>';
   return '<p>' + escapeHtml(state.text) + '</p>';
+}
+function predictionSurface(input) {
+  const phase = input && input.phase;
+  const hasRaceOptions = !!(input && input.hasRaceOptions);
+  const feature = phase === 'results' && hasRaceOptions && predictionUsesFeatureCopy(input && input.model, input && input.coefficientBasis);
+  return {
+    note: feature ? PREDICTION_FEATURE_NOTE : PREDICTION_ODDS_NOTE,
+    meta: feature ? PREDICTION_FEATURE_META : '',
+    html: predictionView(input)
+  };
 }
 function dashboardMode(payload) {
   if (!payload || payload.success !== true) return 'error';
@@ -855,24 +884,35 @@ async function loadRaceCard() {
     el.innerHTML = meetingStatusHtml('error', false);
   }
 }
+function predictionPanel(input) {
+  const surface = predictionSurface(input);
+  const note = document.getElementById('pred-note');
+  if (note) note.textContent = surface.note;
+  const meta = document.getElementById('pred-feature-meta');
+  if (meta) {
+    meta.hidden = !surface.meta;
+    meta.textContent = surface.meta;
+  }
+  return surface.html;
+}
 function onPredictionRaceChange() {
   const select = document.getElementById('pred-race');
   const el = document.getElementById('prediction-content');
-  el.innerHTML = predictionView({ phase: 'loaded', hasRaceOptions: select.options.length > 0 });
+  el.innerHTML = predictionPanel({ phase: 'loaded', hasRaceOptions: select.options.length > 0 });
 }
 async function preparePrediction() {
   const el = document.getElementById('prediction-content');
   const select = document.getElementById('pred-race');
-  el.innerHTML = predictionView({ phase: 'loading', hasRaceOptions: select.options.length > 0 });
+  el.innerHTML = predictionPanel({ phase: 'loading', hasRaceOptions: select.options.length > 0 });
   try {
     const loaded = await loadMeetingsInto(el);
     if (!loaded) return;
     const meeting = primaryMeeting();
     setHeading('pred-heading', currentMeetingHeading(meeting));
     const values = fillRaceSelect(select, meeting);
-    el.innerHTML = predictionView({ phase: 'loaded', hasRaceOptions: values.length > 0 });
+    el.innerHTML = predictionPanel({ phase: 'loaded', hasRaceOptions: values.length > 0 });
   } catch (e) {
-    el.innerHTML = predictionView({ phase: 'error', hasRaceOptions: select.options.length > 0 });
+    el.innerHTML = predictionPanel({ phase: 'error', hasRaceOptions: select.options.length > 0 });
   }
 }
 async function loadPrediction() {
@@ -880,24 +920,30 @@ async function loadPrediction() {
   const select = document.getElementById('pred-race');
   const race = select.value;
   if (!race) {
-    el.innerHTML = predictionView({ phase: 'loaded', hasRaceOptions: select.options.length > 0 });
+    el.innerHTML = predictionPanel({ phase: 'loaded', hasRaceOptions: select.options.length > 0 });
     return;
   }
-  el.innerHTML = predictionView({ phase: 'calculating', hasRaceOptions: true });
+  el.innerHTML = predictionPanel({ phase: 'calculating', hasRaceOptions: true });
   try {
     const r = await fetchAPI('predict', { race });
     if (String(document.getElementById('pred-race').value) !== String(race)) return;
-    if (!r.success) { el.innerHTML = sourceFailureHtml(r); return; }
+    if (!r.success) {
+      predictionPanel({ phase: 'error', hasRaceOptions: true });
+      el.innerHTML = sourceFailureHtml(r);
+      return;
+    }
     if (String(r.race) !== String(race)) return;
-    el.innerHTML = predictionView({
+    el.innerHTML = predictionPanel({
       phase: 'results',
       hasRaceOptions: true,
       predictions: r.predictions,
       runners: runnersForRace(primaryMeeting(), race),
-      raceNo: r.race
+      raceNo: r.race,
+      model: r.model,
+      coefficientBasis: r.coefficientBasis
     });
   } catch (e) {
-    el.innerHTML = predictionView({ phase: 'error', hasRaceOptions: true });
+    el.innerHTML = predictionPanel({ phase: 'error', hasRaceOptions: true });
   }
 }
 function prepareOfficialResults() {
