@@ -804,9 +804,205 @@ test('locked queries are unchanged and neither flag is enabled in the repo', () 
     assert.doesNotMatch(text, /GP_PACK_S\s*=\s*['"]?1['"]?/, file);
   }
   const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  assert.match(html, /預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。/);
-  assert.match(html, /頁面沒有改為讀取晨操、試閘或傷患。/);
+  assert.match(html, /預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。沒有使用晨操、試閘、傷患或其他特徵條件。/);
+  assert.doesNotMatch(html, /頁面沒有改為讀取晨操、試閘或傷患。/);
   assert.doesNotMatch(html, /localtrackwork|btresult|veterinaryrecord|overecord|ovedatabase/);
+});
+
+const PREDICTION_ODDS_NOTE = '預測只根據當前會議的獨贏賠率，不能按日期或馬場查詢其他賽事。沒有使用晨操、試閘、傷患或其他特徵條件。';
+const PREDICTION_FEATURE_NOTE = '此列按特徵條件計分，不根據獨贏或位置賠率。只限當前會議，不能按日期或馬場查詢其他賽事。';
+const PREDICTION_FEATURE_META = '條件包括跑道與路程、晨操與試閘觀察、配備、傷患、跑法、檔位、騎練配對及已宣告負磅。目前只有檔位與負磅會改指數；晨操、試閘與傷患會讀取，但係數為 0，不改名次。跑法現時沒有賽前官方標籤，沿途走勢評述不會當作跑法。指數是未校準的實作預設，不是已校準或已上線的新模型。';
+
+function predictionPage() {
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const start = html.indexOf('// pure-start');
+  const end = html.indexOf('// pure-end');
+  assert.ok(start >= 0 && end > start);
+  const api = new Function(`${html.slice(start, end)}
+    return {
+      PREDICTION_ODDS_NOTE,
+      PREDICTION_FEATURE_NOTE,
+      PREDICTION_FEATURE_META,
+      predictionUsesFeatureCopy,
+      predictionSurface
+    };
+  `)();
+  const sectionStart = html.indexOf('<section id="prediction"');
+  const sectionEnd = html.indexOf('<section id="horse"');
+  assert.ok(sectionStart >= 0 && sectionEnd > sectionStart);
+  return { html, section: html.slice(sectionStart, sectionEnd), api };
+}
+
+function sentenceCount(text) {
+  const parts = String(text).split('。');
+  assert.equal(parts[parts.length - 1], '');
+  return parts.filter(Boolean).length;
+}
+
+function predictionRunners() {
+  return [
+    { no: 1, name_ch: '金鎗六十' },
+    { no: 2, name_ch: '爆熱' }
+  ];
+}
+
+function predictionSurfaceFor(model, coefficientBasis, confidence) {
+  const { api } = predictionPage();
+  return api.predictionSurface({
+    phase: 'results',
+    hasRaceOptions: true,
+    raceNo: 4,
+    model: model,
+    coefficientBasis: coefficientBasis,
+    runners: predictionRunners(),
+    predictions: [
+      { horse: '01', odds: 99.5, winProb: 16.4, confidence: confidence },
+      { horse: '02', odds: 88.8, winProb: 12, confidence: confidence === '未量度' ? '未量度' : '低' }
+    ]
+  });
+}
+
+function assertFlagOffPrediction(surface) {
+  assert.equal(surface.note, PREDICTION_ODDS_NOTE);
+  assert.equal(surface.meta, '');
+  assert.equal(sentenceCount(surface.note), 2);
+  assert.equal(surface.note.includes('條件包括'), false);
+  assert.equal(surface.html.includes('unmeasured-defaults'), false);
+  assert.match(surface.html, /當前會議 · 第4場 · 獨贏/);
+  assert.equal(surface.html.includes('當前會議 · 第4場 · 特徵條件（未校準）'), false);
+  assert.equal(surface.html.includes('<th>勝出概率</th>'), true);
+  assert.equal(surface.html.includes('<span>勝出概率</span>'), true);
+  assert.equal(surface.html.includes('<th>賠率</th>'), true);
+  assert.equal(surface.html.includes('<span>賠率</span>'), true);
+  assert.equal(surface.html.includes('<th>信心</th>'), true);
+  assert.equal(surface.html.includes('<span>信心</span>'), true);
+  assert.match(surface.html, /16\.4%/);
+  assert.match(surface.html, />12%</);
+  assert.match(surface.html, /99\.5/);
+  assert.match(surface.html, /88\.8/);
+  assert.equal(surface.html.includes('特徵指數'), false);
+  assert.equal(surface.html.includes('特徵條件'), false);
+  assert.equal(surface.html.includes('>量度<'), false);
+  assert.equal(surface.html.includes('未量度'), false);
+  assert.equal(surface.html.includes(PREDICTION_FEATURE_NOTE), false);
+  assert.equal(surface.html.includes(PREDICTION_FEATURE_META), false);
+  assert.match(surface.html, /class="horse-cards"/);
+  assert.equal((surface.html.match(/class="horse-card"/g) || []).length, 2);
+  assert.match(surface.html, /金鎗六十/);
+  assert.match(surface.html, /爆熱/);
+}
+
+test('prediction page copy follows the predict model and coefficient basis', () => {
+  const page = predictionPage();
+  const { api, section, html } = page;
+  assert.equal(api.PREDICTION_ODDS_NOTE, PREDICTION_ODDS_NOTE);
+  assert.equal(api.PREDICTION_FEATURE_NOTE, PREDICTION_FEATURE_NOTE);
+  assert.equal(api.PREDICTION_FEATURE_META, PREDICTION_FEATURE_META);
+  assert.equal(sentenceCount(PREDICTION_ODDS_NOTE), 2);
+  assert.equal(sentenceCount(PREDICTION_FEATURE_NOTE), 2);
+  assert.equal(sentenceCount(PREDICTION_FEATURE_META) > 2, true);
+  assert.equal(section.includes('<p class="note" id="pred-note">' + PREDICTION_ODDS_NOTE + '</p>'), true);
+  assert.equal(section.includes(PREDICTION_FEATURE_NOTE), false);
+  assert.equal(section.includes(PREDICTION_FEATURE_META), false);
+  assert.equal(section.includes('unmeasured-defaults'), false);
+  assert.equal(section.includes('<p class="meta" id="pred-feature-meta" hidden></p>'), true);
+  assert.equal((section.match(/<p class="note"/g) || []).length, 1);
+  assert.equal(html.includes('頁面沒有改為讀取晨操、試閘或傷患。'), false);
+
+  const ready = api.predictionSurface({ phase: 'loaded', hasRaceOptions: true });
+  assert.equal(ready.note, PREDICTION_ODDS_NOTE);
+  assert.equal(ready.meta, '');
+  assert.equal(ready.html, '<p>選擇場次後執行預測</p>');
+  for (const phase of ['loading', 'calculating', 'error', 'loaded']) {
+    const before = api.predictionSurface({
+      phase: phase,
+      hasRaceOptions: true,
+      model: FEATURE_CONDITIONS_MODEL,
+      coefficientBasis: FEATURE_CONDITION_COEFFICIENT_BASIS
+    });
+    assert.equal(before.note, PREDICTION_ODDS_NOTE);
+    assert.equal(before.meta, '');
+    assert.equal(before.html.includes(PREDICTION_FEATURE_NOTE), false);
+    assert.equal(before.html.includes(PREDICTION_FEATURE_META), false);
+    assert.equal(before.html.includes('特徵指數'), false);
+  }
+
+  assert.equal(api.predictionUsesFeatureCopy(FEATURE_CONDITIONS_MODEL, FEATURE_CONDITION_COEFFICIENT_BASIS), true);
+  assert.equal(api.predictionUsesFeatureCopy('Odds-based probability model', undefined), false);
+  assert.equal(api.predictionUsesFeatureCopy('Odds-based probability model', FEATURE_CONDITION_COEFFICIENT_BASIS), false);
+  assert.equal(api.predictionUsesFeatureCopy(PACK_S_MODEL, undefined), false);
+  assert.equal(api.predictionUsesFeatureCopy(PACK_S_MODEL, FEATURE_CONDITION_COEFFICIENT_BASIS), false);
+  assert.equal(api.predictionUsesFeatureCopy(FEATURE_CONDITIONS_MODEL, undefined), false);
+  assert.equal(api.predictionUsesFeatureCopy(FEATURE_CONDITIONS_MODEL, ''), false);
+  assert.equal(api.predictionUsesFeatureCopy(FEATURE_CONDITIONS_MODEL, null), false);
+  assert.equal(api.predictionUsesFeatureCopy(undefined, FEATURE_CONDITION_COEFFICIENT_BASIS), false);
+
+  assertFlagOffPrediction(predictionSurfaceFor('Odds-based probability model', undefined, '高'));
+  assertFlagOffPrediction(predictionSurfaceFor(PACK_S_MODEL, undefined, '中'));
+  assertFlagOffPrediction(predictionSurfaceFor(PACK_S_MODEL, FEATURE_CONDITION_COEFFICIENT_BASIS, '中'));
+  assertFlagOffPrediction(predictionSurfaceFor(FEATURE_CONDITIONS_MODEL, undefined, '高'));
+  assertFlagOffPrediction(predictionSurfaceFor(FEATURE_CONDITIONS_MODEL, '', '高'));
+  assertFlagOffPrediction(predictionSurfaceFor(undefined, undefined, '高'));
+
+  const feature = predictionSurfaceFor(FEATURE_CONDITIONS_MODEL, FEATURE_CONDITION_COEFFICIENT_BASIS, '未量度');
+  assert.equal(feature.note, PREDICTION_FEATURE_NOTE);
+  assert.equal(feature.meta, PREDICTION_FEATURE_META);
+  assert.equal(sentenceCount(feature.note), 2);
+  assert.equal(feature.note.includes('條件包括'), false);
+  assert.equal(feature.note.includes('勝出概率'), false);
+  assert.equal(feature.note.includes('unmeasured-defaults'), false);
+  assert.equal(feature.meta.includes('unmeasured-defaults'), false);
+  assert.equal(feature.html.includes('unmeasured-defaults'), false);
+  assert.match(feature.html, /當前會議 · 第4場 · 特徵條件（未校準）/);
+  assert.equal(feature.html.includes('當前會議 · 第4場 · 獨贏'), false);
+  assert.equal(feature.html.includes('勝出概率'), false);
+  assert.equal(feature.html.includes('%'), false);
+  assert.equal(feature.html.includes('<th>賠率</th>'), false);
+  assert.equal(feature.html.includes('<span>賠率</span>'), false);
+  assert.equal(feature.html.includes('99.5'), false);
+  assert.equal(feature.html.includes('88.8'), false);
+  assert.equal(feature.html.includes('<th>特徵指數</th>'), true);
+  assert.equal(feature.html.includes('<span>特徵指數</span>'), true);
+  assert.equal(feature.html.includes('<th>量度</th>'), true);
+  assert.equal(feature.html.includes('<span>量度</span>'), true);
+  assert.equal(feature.html.includes('<th>信心</th>'), false);
+  assert.equal(feature.html.includes('<span>信心</span>'), false);
+  assert.equal(feature.html.includes('>未量度<'), true);
+  assert.match(feature.html, />16\.4</);
+  assert.match(feature.html, />12</);
+  assert.equal(feature.html.includes(PREDICTION_FEATURE_META), false);
+  assert.match(feature.html, /class="horse-cards"/);
+  assert.equal((feature.html.match(/class="horse-card"/g) || []).length, 2);
+  assert.match(feature.html, /金鎗六十/);
+
+  const empty = api.predictionSurface({
+    phase: 'results',
+    hasRaceOptions: true,
+    raceNo: 4,
+    model: FEATURE_CONDITIONS_MODEL,
+    coefficientBasis: FEATURE_CONDITION_COEFFICIENT_BASIS,
+    predictions: []
+  });
+  assert.equal(empty.note, PREDICTION_FEATURE_NOTE);
+  assert.equal(empty.meta, PREDICTION_FEATURE_META);
+  assert.match(empty.html, /暫無足夠數據/);
+  assert.equal(empty.html.includes('勝出概率'), false);
+
+  const panelStart = html.indexOf('function predictionPanel');
+  const panelEnd = html.indexOf('function onPredictionRaceChange');
+  const panel = html.slice(panelStart, panelEnd);
+  assert.match(panel, /predictionSurface/);
+  assert.match(panel, /getElementById\('pred-note'\)/);
+  assert.match(panel, /note\.textContent = surface\.note/);
+  assert.match(panel, /getElementById\('pred-feature-meta'\)/);
+  assert.match(panel, /meta\.textContent = surface\.meta/);
+  assert.equal(panel.includes('unmeasured-defaults'), false);
+  const loadStart = html.indexOf('async function loadPrediction');
+  const loadEnd = html.indexOf('function prepareOfficialResults');
+  const load = html.slice(loadStart, loadEnd);
+  assert.match(load, /predictionPanel/);
+  assert.match(load, /model: r\.model/);
+  assert.match(load, /coefficientBasis: r\.coefficientBasis/);
 });
 
 test('loader rejects a history page for a different horse', async (t) => {
