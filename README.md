@@ -1,6 +1,12 @@
 # golden-path-jintu
 Golden Path · 金途 - Hong Kong horse racing data analysis dashboard
 
+公開網站是 https://www.golden-path.app。
+
+https://golden-path-jintu.vercel.app 不是公開入口。該主機曾回應 HTTP 404，回應標頭 x-vercel-error 為 DEPLOYMENT_NOT_FOUND。*.vercel.app 網址也可能受 SSO 保護。任何 *.vercel.app 網址，包括預覽網址，都不是公開入口。
+
+測試：`package.json` 的 test script 是 `node --test`。在倉庫根目錄執行 `npm test` 或 `node --test`。
+
 規格：[Size S：盤口基線 + 已有特徵調整](docs/pack-s-features-spec.md)。
 
 獨立規格：[特徵先行條件](docs/feature-conditions-spec.md)。分析條件是跑道與路程、晨操與試閘觀察、配備、傷患、跑法、檔位、騎練配對鍵與已宣告負磅。獨贏與位置賠率不是分析條件，也不是基線。`GP_FEATURE_CONDITIONS` 預設關閉：只有環境值精確等於字串 `1` 才讀取公開晨操、試閘與傷患頁。未設定、空字串、`0` 以及其他值都維持今日的 `type=predict`，而且不會抓那些頁。啟用時缺值不填補；跑法沒有賽前官方分類就不調整，也不從沿途文字推斷。係數是未經量度的實作預設，不是校準，也不是上線核准。本倉庫沒有把這個旗標或 `GP_PACK_S` 寫成啟用。

@@ -35,7 +35,8 @@ function pureApi() {
       collectLatestOfficial,
       renderOfficialMeeting,
       currentMeetingHeading,
-      headingHtml
+      headingHtml,
+      renderMeetingCard
     };
   `)();
 }
@@ -156,9 +157,9 @@ test('official results date is year-month-day and the form stacks', () => {
   assert.equal(pure.normalizeOfficialDateInput('2026-11-22T16:00:00.000Z'), '');
   assert.equal(html.includes('toISOString'), false);
   const shown = pure.headingHtml('當前會議 · 沙田 · 2026-12-20 · 11 場');
-  assert.match(shown, /2026&#8209;12&#8209;20/);
-  assert.match(shown, /<wbr>/);
+  assert.equal(shown, '<span class="nowrap">當前會議 ·</span> <span class="nowrap">沙田 ·</span> <span class="nowrap">2026&#8209;12&#8209;20 · 11 場</span>');
   assert.equal(shown.includes('2026-12-20'), false);
+  assert.equal(shown.includes('<wbr>'), false);
   assert.equal(pure.currentMeetingHeading({ date: '2026-12-20', venueCode: 'ST', races: [{ no: 1 }] }), '當前會議 · 沙田 · 2026-12-20 · 1 場');
   const hint = pure.officialDateHint('2026-12-20');
   assert.match(hint, /YYYY-MM-DD/);
@@ -343,6 +344,90 @@ test('overview falls back to official results only when the current meeting is e
   assert.equal(/official-venue/.test(dash), false);
   assert.equal(/fetchAPI\('meetings',\s*\{/.test(dash), false);
   assert.equal(/currentMeetings\s*=\s*[^;]*official/i.test(html), false);
+});
+
+test('headings keep the separator on the previous segment and the date with the race count', () => {
+  const current = pure.headingHtml('當前會議 · 沙田 · 2026-11-29 · 11 場');
+  assert.equal(current, '<span class="nowrap">當前會議 ·</span> <span class="nowrap">沙田 ·</span> <span class="nowrap">2026&#8209;11&#8209;29 · 11 場</span>');
+  const happy = pure.headingHtml('當前會議 · 跑馬地 · 2026-11-28 · 3 場');
+  assert.equal(happy, '<span class="nowrap">當前會議 ·</span> <span class="nowrap">跑馬地 ·</span> <span class="nowrap">2026&#8209;11&#8209;28 · 3 場</span>');
+  const official = pure.headingHtml('官方賽果 · 已結束賽事 · 沙田 · 2026-11-22 · 9 場');
+  assert.equal(official, '<span class="nowrap">官方賽果 ·</span> <span class="nowrap">已結束賽事 ·</span> <span class="nowrap">沙田 ·</span> <span class="nowrap">2026&#8209;11&#8209;22 · 9 場</span>');
+  assert.equal(pure.headingHtml('當前會議'), '當前會議');
+  const hint = pure.headingHtml('格式：YYYY-MM-DD（年-月-日）。今日（香港）：2026-12-20');
+  assert.match(hint, /2026&#8209;12&#8209;20/);
+  assert.equal(hint.includes('<span'), false);
+  for (const value of [current, happy, official]) {
+    assert.equal(value.includes('>·'), false);
+    assert.equal(value.includes('> ·'), false);
+    assert.equal(value.includes('<wbr>'), false);
+    assert.equal(value.includes('-'), false);
+  }
+  assert.equal(html.includes('<wbr>'), false);
+  assert.match(html, /\.nowrap\s*\{\s*white-space:\s*nowrap/);
+  assert.equal(/h3[^{]*\{[^}]*white-space:\s*nowrap/.test(html), false);
+});
+
+test('narrow notes do not isolate Chinese punctuation', () => {
+  const narrow = html.slice(html.indexOf('@media (max-width: 720px)'));
+  assert.match(narrow, /\.note,\s*\.official-note\s*\{[^}]*line-break:\s*auto/);
+  assert.match(html, /line-break:\s*strict/);
+});
+
+test('overview uses one limit note and compact race rows inside the scrolling container', () => {
+  const meeting = {
+    date: '2026-11-28',
+    venueCode: 'ST',
+    races: [
+      { no: 1, raceName_ch: '第一班讓賽', distance: 1200, postTime: '2026-11-28T05:00:00Z' },
+      { no: 2, raceName_ch: '第二班讓賽', distance: 1650, postTime: '2026-11-28T05:30:00Z' },
+      { no: 3, raceName_ch: '第三班讓賽', distance: 1400, postTime: '2026-11-28T09:45:00Z' }
+    ]
+  };
+  const card = pure.renderMeetingCard(meeting);
+  assert.equal(card.includes('class="note"'), false);
+  assert.equal(card.includes('只顯示馬會目前回傳的當前會議'), false);
+  assert.equal(card.includes('horse-card'), false);
+  assert.equal(card.includes('horse-cards'), false);
+  assert.match(card, /class="race-rows"/);
+  assert.equal((card.match(/class="race-row"/g) || []).length, 3);
+  assert.match(card, /第1場 第一班讓賽/);
+  assert.match(card, /class="race-row-meta nowrap">1200米 · 開跑 13:00/);
+  assert.match(card, /開跑 17:45/);
+  assert.match(card, /<span class="nowrap">2026&#8209;11&#8209;28 · 3 場<\/span>/);
+  const nine = pure.renderMeetingCard({
+    date: '2026-11-29',
+    venueCode: 'HV',
+    races: Array.from({ length: 9 }, (_, index) => ({
+      no: index + 1,
+      raceName_ch: '賽事' + (index + 1),
+      distance: 1200,
+      postTime: '2026-11-29T05:00:00Z'
+    }))
+  });
+  assert.equal((nine.match(/class="race-row"/g) || []).length, 9);
+  assert.equal(nine.includes('horse-card'), false);
+  assert.match(html, /\.race-row\s*\{[^}]*border-bottom:\s*1px solid/);
+  assert.match(html, /\.race-row:last-child\s*\{\s*border-bottom:\s*none/);
+
+  const dash = fnSource('loadDashboard', 'function initChart');
+  assert.equal((dash.match(/CURRENT_MEETING_LIMIT/g) || []).length, 1);
+  assert.ok(dash.indexOf('class="note"') < dash.indexOf('renderMeetingCard'));
+
+  const containerAt = html.indexOf('<div class="container">');
+  const footerAt = html.indexOf('<footer>');
+  const scriptAt = html.indexOf('<script>');
+  const containerClose = html.lastIndexOf('</div>', scriptAt);
+  assert.ok(containerAt < footerAt && footerAt < containerClose && containerClose < scriptAt);
+  const narrow = html.slice(html.indexOf('@media (max-width: 720px)'));
+  assert.equal(/footer\s*\{[^}]*flex:\s*none/.test(narrow), false);
+  assert.match(narrow, /#dashboard \.card\s*\{[^}]*padding:\s*12px/);
+  assert.match(narrow, /#dashboard \.card h3\s*\{[^}]*margin-bottom:\s*6px/);
+  assert.match(narrow, /#dashboard \.note\s*\{[^}]*padding:\s*6px 10px/);
+  const beforeNarrow = html.slice(0, html.indexOf('@media (max-width: 720px)'));
+  assert.match(beforeNarrow, /\.card\s*\{[^}]*padding:\s*18px/);
+  assert.match(beforeNarrow, /\.note\s*\{[^}]*padding:\s*8px 12px/);
+  assert.match(narrow, /\.header \.nav\s*\{[^}]*position:\s*fixed/);
 });
 
 function renderSampleRunners() {
