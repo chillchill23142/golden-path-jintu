@@ -3,12 +3,15 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { test } from 'node:test';
 
+import { meetingCalendarDate } from '../api/featureConditions.js';
 import handler, {
   USER_FACING_MESSAGE,
   classifySourceFailure,
   createHandler,
+  currentMeetingRace,
   operationNameFromQuery,
   parseRaceNo,
+  selectLocalMeeting,
   winPoolForRace
 } from '../api/races.js';
 import { RACE_MEETINGS_QUERY, WIN_POOL_QUERY } from '../api/officialQueries.js';
@@ -459,4 +462,91 @@ test('frontend presents the current meeting, dynamic race numbers, and source fa
   assert.equal(pure.formatHongKongTime('2026-11-25T10:40:00Z'), '18:40');
   assert.equal(pure.oddsForRunner([{ combString: '01', oddsValue: '25' }, { combString: '02', oddsValue: '8.8' }], 1), '25');
   assert.equal(pure.oddsForRunner([{ combString: '01', oddsValue: '25' }], 2), '');
+});
+
+test('local ST/HV selection skips an overseas first card', () => {
+  const now = new Date('2026-11-27T16:30:00.000Z');
+  const overseas = {
+    id: 'AUS',
+    venueCode: 'S1',
+    date: '2026-11-28',
+    races: [{ no: 1, runners: [{ no: 9, barrierDrawNumber: 9 }] }]
+  };
+  const shaTinOld = {
+    id: 'ST-OLD',
+    venueCode: 'st',
+    date: '2020-01-01',
+    races: [{ no: 1, runners: [{ no: 1, barrierDrawNumber: 4 }] }, { no: 4, runners: [{ no: 1, barrierDrawNumber: 3 }] }]
+  };
+  const valleyToday = {
+    id: 'HV-TODAY',
+    venueCode: ' HV ',
+    date: '2026-11-28',
+    races: [{ no: '1', runners: [{ no: 7, barrierDrawNumber: 7 }] }]
+  };
+  const shaTinTodayLater = {
+    id: 'ST-TODAY',
+    venueCode: 'ST',
+    date: '2026-11-28T00:00:00+08:00',
+    races: [{ no: 1, runners: [{ no: 2, barrierDrawNumber: 2 }] }]
+  };
+  const utcCalendar = {
+    id: 'UTC',
+    venueCode: 'ST',
+    date: '2026-11-27',
+    races: [{ no: 1, runners: [{ no: 1, barrierDrawNumber: 1 }] }]
+  };
+
+  assert.equal(selectLocalMeeting([overseas, shaTinOld, valleyToday], 1, now).id, 'HV-TODAY');
+  assert.equal(selectLocalMeeting([overseas, valleyToday, shaTinTodayLater], 1, now).id, 'HV-TODAY');
+  assert.equal(selectLocalMeeting([overseas, shaTinOld, valleyToday], 4, now).id, 'ST-OLD');
+  assert.equal(selectLocalMeeting([utcCalendar, valleyToday], 1, now).id, 'HV-TODAY');
+  assert.equal(selectLocalMeeting([overseas, { id: 'S2', venueCode: 'S2', date: '2026-11-28', races: [{ no: 1 }] }], 1, now), null);
+  assert.equal(selectLocalMeeting({ raceMeetings: [valleyToday] }, 1, now), null);
+
+  const skipped = currentMeetingRace({
+    activeMeetings: [valleyToday],
+    raceMeetings: [overseas, shaTinOld]
+  }, 1);
+  assert.equal(skipped.runners[0].barrierDrawNumber, 4);
+  assert.equal(currentMeetingRace({ raceMeetings: [overseas, shaTinOld] }, '4').runners[0].barrierDrawNumber, 3);
+  assert.equal(currentMeetingRace({ raceMeetings: [overseas] }, 1), null);
+  assert.equal(currentMeetingRace({ raceMeetings: [overseas, shaTinOld] }, 2), null);
+
+  const today = meetingCalendarDate(new Date().toISOString());
+  const todayCard = {
+    id: 'TODAY',
+    venueCode: 'HV',
+    date: today,
+    races: [{ no: 1, runners: [{ no: 1, barrierDrawNumber: 8 }] }]
+  };
+  assert.equal(currentMeetingRace({ raceMeetings: [overseas, shaTinOld, todayCard] }, 1).runners[0].barrierDrawNumber, 8);
+});
+
+test('meetings and races still return overseas cards, and locked queries are unchanged', async (t) => {
+  const overseas = { id: 'AUS', venueCode: 'S1', date: '2026-11-28', races: [{ no: 1, raceName_ch: '澳洲' }] };
+  const local = { id: 'ST', venueCode: 'ST', date: '2026-11-28', races: [{ no: 1 }, { no: 2 }] };
+  for (const type of ['meetings', 'races']) {
+    const { res, calls } = await invoke(t,
+      { type, date: '2099-01-01', venue: 'HV' },
+      async () => jsonResponse(200, { data: { raceMeetings: [overseas, local] } })
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.operationName, 'raceMeetings');
+    assert.equal(calls[0].body.query, RACE_MEETINGS_QUERY);
+    assert.equal(createHash('sha256').update(calls[0].body.query).digest('hex'), MEETING_SHA);
+    assert.equal(calls[0].body.query.length, 4497);
+    assert.deepEqual(calls[0].body.variables, {});
+    assert.equal(calls[0].body.variables.date, undefined);
+    assert.equal(calls[0].body.variables.venueCode, undefined);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.currentMeeting, true);
+    assert.deepEqual(res.body.data, [overseas, local]);
+    assert.equal(res.body.data[0].venueCode, 'S1');
+    assert.equal(res.body.date, undefined);
+    assert.equal(res.body.venue, undefined);
+  }
+  assert.equal(createHash('sha256').update(WIN_POOL_QUERY).digest('hex'), POOL_SHA);
+  assert.equal(WIN_POOL_QUERY.length, 1005);
 });
