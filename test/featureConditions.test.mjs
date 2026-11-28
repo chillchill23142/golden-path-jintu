@@ -33,7 +33,7 @@ import {
 } from '../api/featureConditions.js';
 import { RACE_MEETINGS_QUERY, WIN_POOL_QUERY } from '../api/officialQueries.js';
 import { isPackSEnabled, PACK_S_MODEL } from '../api/packS.js';
-import { USER_FACING_MESSAGE, createHandler, predictFromNodes } from '../api/races.js';
+import { USER_FACING_MESSAGE, createHandler, currentMeetingRace, predictFromNodes } from '../api/races.js';
 
 const GRAPHQL_URL = 'https://info.cld.hkjc.com/graphql/base/';
 const MEETING_SHA = 'bbef8d3eb03bf9c59581e76140e8d3a7fed873b7e84a1a323b02b72f5ba736cb';
@@ -1003,6 +1003,110 @@ test('prediction page copy follows the predict model and coefficient basis', () 
   assert.match(load, /predictionPanel/);
   assert.match(load, /model: r\.model/);
   assert.match(load, /coefficientBasis: r\.coefficientBasis/);
+});
+
+test('feature path selects a later local meeting and does not 502 on an overseas first card', async (t) => {
+  silence(t);
+  const pages = samplePages();
+  const overseas = {
+    id: 'AUS',
+    venueCode: 'S1',
+    date: '2026-11-28',
+    races: [{
+      no: 1,
+      distance: 1200,
+      runners: [{ no: 9, barrierDrawNumber: 14, handicapWeight: '140' }]
+    }]
+  };
+  const card = meetingCard(sampleRunners());
+  card.data.raceMeetings.unshift(overseas);
+  const localRace = currentMeetingRace(card.data, 1);
+  assert.equal(localRace.runners.map((runner) => runner.no).join(','), '1,2,3');
+  assert.equal(card.data.raceMeetings[0].venueCode, 'S1');
+
+  const { res, calls } = await invoke(
+    { type: 'predict', race: '1', date: '2099-01-01', venue: 'ST' },
+    async (url, init) => {
+      if (url === GRAPHQL_URL) return jsonResponse(200, card);
+      assert.equal(init.method, 'GET');
+      assert.equal(pages[url] == null, false, url);
+      return htmlResponse(200, pages[url], url);
+    },
+    { GP_FEATURE_CONDITIONS: '1' }
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.error, undefined);
+  assert.equal(res.body.model, FEATURE_CONDITIONS_MODEL);
+  assert.deepEqual(res.body.predictions.map((row) => row.horse), ['1', '2', '3']);
+  assert.equal(res.body.predictions[0].winProb, 16.9);
+  const graphql = calls.filter((call) => call.url === GRAPHQL_URL);
+  assert.equal(graphql.length, 1);
+  assert.equal(graphql[0].body.query, RACE_MEETINGS_QUERY);
+  assert.equal(createHash('sha256').update(graphql[0].body.query).digest('hex'), MEETING_SHA);
+  assert.equal(graphql[0].body.query.length, 4497);
+  assert.deepEqual(graphql[0].body.variables, {});
+  assert.equal(calls.some((call) => call.body && call.body.query === WIN_POOL_QUERY), false);
+  assert.equal(calls.some((call) => String(call.url).includes('Racecourse=HV')), true);
+  assert.equal(calls.some((call) => String(call.url).includes('racedate=2026/11/25')), true);
+  assert.equal(calls.some((call) => String(call.url).includes('Racecourse=S1')), false);
+  assert.equal(calls.some((call) => String(call.url).includes('2099')), false);
+});
+
+test('an overseas-only card does not 502 and does not fetch feature pages', async () => {
+  let htmlFetches = 0;
+  const onlyOverseas = await invoke(
+    { type: 'predict', race: '1', date: '2099-01-01', venue: 'ST' },
+    async (url) => {
+      if (url !== GRAPHQL_URL) htmlFetches += 1;
+      return jsonResponse(200, {
+        data: {
+          raceMeetings: [
+            { id: 'AUS', venueCode: 'S1', date: '2026-11-28', races: [{ no: 1, runners: [{ no: 1, barrierDrawNumber: 1 }] }] },
+            { id: 'S2', venueCode: 'S2', date: '2026-11-28', races: [{ no: 1, runners: [{ no: 2 }] }] }
+          ]
+        }
+      });
+    },
+    { GP_FEATURE_CONDITIONS: '1' }
+  );
+  assert.equal(htmlFetches, 0);
+  assert.equal(onlyOverseas.calls.length, 1);
+  assert.equal(onlyOverseas.calls[0].body.query, RACE_MEETINGS_QUERY);
+  assert.deepEqual(onlyOverseas.calls[0].body.variables, {});
+  assert.equal(onlyOverseas.calls[0].body.query === WIN_POOL_QUERY, false);
+  assert.equal(onlyOverseas.res.statusCode, 200);
+  assert.deepEqual(onlyOverseas.res.body, {
+    success: true,
+    currentMeeting: true,
+    race: 1,
+    predictions: [],
+    model: FEATURE_CONDITIONS_MODEL,
+    coefficientBasis: FEATURE_CONDITION_COEFFICIENT_BASIS
+  });
+
+  htmlFetches = 0;
+  const localWithoutRace = await invoke(
+    { type: 'predict', race: '1' },
+    async (url) => {
+      if (url !== GRAPHQL_URL) htmlFetches += 1;
+      return jsonResponse(200, {
+        data: {
+          raceMeetings: [
+            { id: 'AUS', venueCode: 'S1', date: '2026-11-28', races: [{ no: 1, runners: [{ no: 1 }] }] },
+            { id: 'ST', venueCode: 'ST', date: '2026-11-25', races: [{ no: 2, runners: [{ no: 1 }] }] }
+          ]
+        }
+      });
+    },
+    { GP_FEATURE_CONDITIONS: '1' }
+  );
+  assert.equal(htmlFetches, 0);
+  assert.equal(localWithoutRace.calls.length, 1);
+  assert.equal(localWithoutRace.res.statusCode, 200);
+  assert.equal(localWithoutRace.res.body.success, true);
+  assert.deepEqual(localWithoutRace.res.body.predictions, []);
+  assert.equal(localWithoutRace.res.body.error, undefined);
 });
 
 test('loader rejects a history page for a different horse', async (t) => {

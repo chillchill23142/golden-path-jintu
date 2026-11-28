@@ -7,6 +7,7 @@ import {
   currentMeetingKey,
   isFeatureConditionsEnabled,
   loadFeatureSources,
+  meetingCalendarDate,
   predictFromFeatureConditions
 } from './featureConditions.js';
 import { PACK_S_MODEL, isPackSEnabled, predictWithPackS } from './packS.js';
@@ -187,26 +188,57 @@ function meetingList(data) {
   return Array.isArray(meetings) ? meetings : [];
 }
 
-// First card in the current-meeting payload. Request date and venue are not filters.
-export function currentMeetingRace(data, raceNo) {
+function isLocalMeeting(meeting) {
+  const code = parseVenueCode(meeting && meeting.venueCode);
+  return code === 'ST' || code === 'HV';
+}
+
+function raceOnMeeting(meeting, raceNo) {
   const target = parseRaceNo(raceNo);
-  if (target == null) return null;
-  const meetings = meetingList(data);
-  const first = meetings[0];
-  const races = first && Array.isArray(first.races) ? first.races : [];
+  if (target == null || !meeting) return null;
+  const races = Array.isArray(meeting.races) ? meeting.races : [];
   for (const race of races) {
     if (race && parseRaceNo(race.no) === target) return race;
   }
   return null;
 }
 
+// Local ST/HV card. Request date and venue are not filters.
+// Several local cards: prefer today's Hong Kong calendar date when it contains raceNo,
+// and the first of those in list order. Otherwise the first local card in list order.
+export function selectLocalMeeting(meetings, raceNo, now = new Date()) {
+  const list = Array.isArray(meetings) ? meetings : [];
+  const local = [];
+  for (const meeting of list) {
+    if (isLocalMeeting(meeting)) local.push(meeting);
+  }
+  if (local.length === 0) return null;
+  if (local.length === 1) return local[0];
+  const target = parseRaceNo(raceNo);
+  const today = meetingCalendarDate(now.toISOString());
+  if (target != null && today) {
+    for (const meeting of local) {
+      if (meetingCalendarDate(meeting && meeting.date) === today && raceOnMeeting(meeting, target)) {
+        return meeting;
+      }
+    }
+  }
+  return local[0];
+}
+
+export function currentMeetingRace(data, raceNo) {
+  const target = parseRaceNo(raceNo);
+  if (target == null) return null;
+  return raceOnMeeting(selectLocalMeeting(meetingList(data), target), target);
+}
+
 async function predictFeatureConditions(raceNo, doFetch) {
   const card = await gql(RACE_MEETINGS_QUERY, {}, doFetch);
   if (!card.ok) return card;
-  const meetings = meetingList(card.data);
-  const meeting = meetings[0];
-  const race = currentMeetingRace(card.data, raceNo);
-  if (!meeting || !race) return { ok: true, predictions: [] };
+  const meeting = selectLocalMeeting(meetingList(card.data), raceNo);
+  if (!meeting) return { ok: true, predictions: [] };
+  const race = raceOnMeeting(meeting, raceNo);
+  if (!race) return { ok: true, predictions: [] };
   const key = currentMeetingKey(meeting);
   if (!key) return { ok: false, code: 'SOURCE_ERROR' };
   const loaded = await loadFeatureSources({
